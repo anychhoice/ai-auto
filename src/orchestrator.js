@@ -79,10 +79,16 @@ function buildRepairPrompt(config, plan, failureSummary, attemptNumber, sessionI
   ].join("\n");
 }
 
-export async function runCycle(config) {
+export async function runCycle(config, logger = console) {
   const context = await getWorkspaceContext(config);
+  logger.log("[ai-auto] consulting Codex in read-only mode");
   context.codexConsultation = await consultCodex(config, context);
+  logger.log(
+    `[ai-auto] Codex consultation: ${context.codexConsultation.ok ? "ok" : "failed"}`
+  );
+  logger.log("[ai-auto] planning implementation with OpenAI");
   const plan = await createCyclePlan(config, context);
+  logger.log(`[ai-auto] plan: ${plan.shouldModify ? "modify workspace" : "no change"}`);
   const initialCommands = config.commandDiscovery.enabled
     ? resolveVerificationCommands(config, plan, context.detectedCommands)
     : {
@@ -152,6 +158,7 @@ export async function runCycle(config) {
             initialTestPolicy
           );
 
+    logger.log(`[ai-auto] running Codex implementation attempt ${attempt} in ${config.codex.sandbox}`);
     const codexResult = await runCodex(config, prompt);
     cycleLog.codex.push(codexResult);
 
@@ -172,6 +179,7 @@ export async function runCycle(config) {
     const commands = [...resolvedCommands.test, ...resolvedCommands.verify];
     cycleLog.executedCommands.push(resolvedCommands);
 
+    logger.log(`[ai-auto] running ${commands.length} verification command(s)`);
     verificationResults = await runCommandList(commands, {
       cwd: config.workspace,
       timeoutMs: 30 * 60_000
@@ -263,7 +271,7 @@ export async function runLoop(config, logger = console) {
   while (Date.now() < deadline) {
     cycleNumber += 1;
     logger.log(`[ai-auto] starting cycle ${cycleNumber}`);
-    const result = await runCycle(config);
+    const result = await runCycle(config, logger);
     logger.log(`[ai-auto] cycle ${cycleNumber}: ${result.outcome}`);
     logger.log(`[ai-auto] log: ${result.logPath}`);
 
