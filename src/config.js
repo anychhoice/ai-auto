@@ -10,11 +10,24 @@ export const DEFAULT_CONFIG = {
   maxIterationsPerCycle: 3,
   discussionRounds: 2,
   logDir: ".ai-auto",
+  instructionFile: ".ai-auto/instructions.md",
   autoCommit: false,
   allowPlannerCommandOverride: false,
+  commandDiscovery: {
+    enabled: true,
+    requireTests: true,
+    fallbackVerifyCommands: ["git diff --check"]
+  },
+  codexConsultation: {
+    enabled: true,
+    questionSource: "openai",
+    sandbox: "read-only",
+    approvalPolicy: "never",
+    timeoutMs: 1_200_000
+  },
   commands: {
-    test: ["npm test"],
-    verify: ["npm run check"],
+    test: [],
+    verify: [],
     status: ["git status --short"]
   },
   codex: {
@@ -29,7 +42,7 @@ export const DEFAULT_CONFIG = {
     requireCleanGit: true
   },
   mission:
-    "Continuously improve the current workspace project. Prefer small, tested, reviewable changes. Never change secrets, credentials, or deployment configuration unless explicitly requested."
+    "First understand the target project, identify its architecture, tests, risks, and improvement opportunities, then choose one small, tested, reviewable improvement. Never change secrets, credentials, or deployment configuration unless explicitly requested."
 };
 
 export function parseDuration(value) {
@@ -100,11 +113,15 @@ export function loadConfig(configPath = "config/ai-auto.json") {
   const logDir = path.isAbsolute(config.logDir)
     ? config.logDir
     : path.resolve(workspace, config.logDir);
+  const instructionFile = path.isAbsolute(config.instructionFile)
+    ? config.instructionFile
+    : path.resolve(workspace, config.instructionFile);
 
   return {
     ...config,
     workspace,
     logDir,
+    instructionFile,
     maxRuntimeMs: parseDuration(config.maxRuntime),
     cycleIntervalMs: parseDuration(config.cycleInterval)
   };

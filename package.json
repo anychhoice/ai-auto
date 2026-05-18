@@ -9,10 +9,13 @@
   },
   "scripts": {
     "doctor": "node src/cli.js doctor",
+    "instruct": "node src/cli.js instruct",
+    "instructions": "node src/cli.js instructions",
+    "clear-instructions": "node src/cli.js clear-instructions",
     "once": "node src/cli.js once",
     "run": "node src/cli.js run",
     "test": "node --test",
-    "check": "node --check src/cli.js && node --check src/config.js && node --check src/codex.js && node --check src/openai.js && node --check src/orchestrator.js && node --check src/shell.js && node --check src/workspace.js"
+    "check": "node --check src/cli.js && node --check src/config.js && node --check src/codex.js && node --check src/consultation.js && node --check src/detectCommands.js && node --check src/instructions.js && node --check src/openai.js && node --check src/orchestrator.js && node --check src/shell.js && node --check src/workspace.js"
   },
   "engines": {
     "node": ">=20"

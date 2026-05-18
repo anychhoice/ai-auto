@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import { consultCodex } from "./consultation.js";
 import { runCodex } from "./codex.js";
+import { detectProjectCommands, resolveVerificationCommands } from "./detectCommands.js";
+import { getInstructionRevision, readInstructions } from "./instructions.js";
 import { createCyclePlan } from "./openai.js";
 import { runCommand, runCommandList, summarizeCommandResult } from "./shell.js";
 import { commitAll, getWorkspaceContext, isGitClean } from "./workspace.js";
@@ -21,23 +24,33 @@ function writeJsonLog(config, name, data) {
 }
 
 function resultsPassed(results) {
-  return results.every((result) => result.exitCode === 0 && !result.timedOut);
+  return results.length > 0 && results.every((result) => result.exitCode === 0 && !result.timedOut);
 }
 
 function summarizeResults(results) {
   return results.map((result) => summarizeCommandResult(result)).join("\n\n");
 }
 
-function buildImplementationPrompt(config, plan, attemptNumber, previousFailure) {
+function buildImplementationPrompt(
+  config,
+  plan,
+  attemptNumber,
+  previousFailure,
+  sessionInstructions,
+  testPolicy
+) {
   return [
     "You are Codex running inside an unattended local automation loop.",
     `Workspace: ${config.workspace}`,
     "",
     "Implement the plan below with small, focused changes.",
+    "Treat plan.codexPrompt as the primary task.",
     "Run or update tests when useful. Do not deploy. Do not modify secrets.",
+    testPolicy,
     "If the plan is already satisfied, make no code changes and explain briefly.",
     "",
     `Attempt: ${attemptNumber}`,
+    sessionInstructions ? `Active natural-language session instructions:\n${sessionInstructions}` : "",
     previousFailure ? `Previous failure:\n${previousFailure}` : "",
     "",
     "Plan:",
@@ -47,14 +60,16 @@ function buildImplementationPrompt(config, plan, attemptNumber, previousFailure)
     .join("\n");
 }
 
-function buildRepairPrompt(config, plan, failureSummary, attemptNumber) {
+function buildRepairPrompt(config, plan, failureSummary, attemptNumber, sessionInstructions, testPolicy) {
   return [
     "The previous implementation failed verification.",
     `Workspace: ${config.workspace}`,
     "Fix the failing tests or checks with the smallest reasonable change.",
+    testPolicy,
     "Do not deploy. Do not modify secrets.",
     "",
     `Attempt: ${attemptNumber}`,
+    sessionInstructions ? `Active natural-language session instructions:\n${sessionInstructions}` : "",
     "",
     "Original plan:",
     JSON.stringify(plan, null, 2),
@@ -66,10 +81,40 @@ function buildRepairPrompt(config, plan, failureSummary, attemptNumber) {
 
 export async function runCycle(config) {
   const context = await getWorkspaceContext(config);
+  context.codexConsultation = await consultCodex(config, context);
   const plan = await createCyclePlan(config, context);
+  const initialCommands = config.commandDiscovery.enabled
+    ? resolveVerificationCommands(config, plan, context.detectedCommands)
+    : {
+        test: config.commands.test,
+        verify: config.commands.verify,
+        detected: { test: [], verify: [], reasons: [] },
+        requireTests: false,
+        hasRunnableTests: Boolean(config.commands.test.length),
+        needsTestCreation: false,
+        source: { test: "config", verify: "config" }
+      };
+  const initialTestPolicy = initialCommands.needsTestCreation
+    ? "No runnable test command is currently detected. Before unrelated feature work, add the smallest useful test setup and a standard runnable test command for this project."
+    : "Keep the existing test setup runnable, and update tests for behavior you change.";
+
+  if (!plan.shouldModify && initialCommands.needsTestCreation) {
+    plan.shouldModify = true;
+    plan.cycleSummary = `${plan.cycleSummary} No runnable tests were detected, so this cycle must add a minimal test setup.`;
+    plan.codexPrompt = [
+      plan.codexPrompt,
+      "",
+      "No runnable tests were detected. First add minimal characterization or regression tests and a standard test command for this project. Keep the change small and verify it runs."
+    ].join("\n");
+  }
+
   const cycleLog = {
     startedAt: new Date().toISOString(),
+    sessionInstructionsAtPlan: context.sessionInstructions,
+    codexConsultation: context.codexConsultation,
     plan,
+    detectedCommands: context.detectedCommands,
+    executedCommands: [],
     codex: [],
     verification: [],
     deploy: null,
@@ -87,20 +132,45 @@ export async function runCycle(config) {
   let verificationResults = [];
 
   for (let attempt = 1; attempt <= config.maxIterationsPerCycle; attempt += 1) {
+    const sessionInstructions = readInstructions(config);
     const prompt =
       attempt === 1
-        ? buildImplementationPrompt(config, plan, attempt, failureSummary)
-        : buildRepairPrompt(config, plan, failureSummary, attempt);
+        ? buildImplementationPrompt(
+            config,
+            plan,
+            attempt,
+            failureSummary,
+            sessionInstructions,
+            initialTestPolicy
+          )
+        : buildRepairPrompt(
+            config,
+            plan,
+            failureSummary,
+            attempt,
+            sessionInstructions,
+            initialTestPolicy
+          );
 
     const codexResult = await runCodex(config, prompt);
     cycleLog.codex.push(codexResult);
 
-    const commands = config.allowPlannerCommandOverride
-      ? [
-          ...(plan.testCommands.length ? plan.testCommands : config.commands.test),
-          ...(plan.verifyCommands.length ? plan.verifyCommands : config.commands.verify)
-        ]
-      : [...config.commands.test, ...config.commands.verify];
+    const detectedCommands = config.commandDiscovery.enabled
+      ? detectProjectCommands(config.workspace)
+      : context.detectedCommands;
+    const resolvedCommands = config.commandDiscovery.enabled
+      ? resolveVerificationCommands(config, plan, detectedCommands)
+      : {
+          test: config.commands.test,
+          verify: config.commands.verify,
+          detected: { test: [], verify: [], reasons: [] },
+          requireTests: false,
+          hasRunnableTests: Boolean(config.commands.test.length),
+          needsTestCreation: false,
+          source: { test: "config", verify: "config" }
+        };
+    const commands = [...resolvedCommands.test, ...resolvedCommands.verify];
+    cycleLog.executedCommands.push(resolvedCommands);
 
     verificationResults = await runCommandList(commands, {
       cwd: config.workspace,
@@ -108,23 +178,35 @@ export async function runCycle(config) {
     });
     cycleLog.verification.push(verificationResults);
 
-    if (codexResult.exitCode === 0 && resultsPassed(verificationResults)) {
+    if (
+      codexResult.exitCode === 0 &&
+      resultsPassed(verificationResults) &&
+      !resolvedCommands.needsTestCreation
+    ) {
       failureSummary = "";
       break;
     }
 
     failureSummary = [
       codexResult.exitCode === 0 ? "" : summarizeCommandResult(codexResult),
+      resolvedCommands.needsTestCreation
+        ? "No runnable test command was detected after the Codex attempt. Add a minimal test setup and a standard test command before continuing with other improvements."
+        : "",
       summarizeResults(verificationResults)
     ]
       .filter(Boolean)
       .join("\n\n");
   }
 
-  if (!resultsPassed(verificationResults)) {
+  const lastExecutedCommands = cycleLog.executedCommands.at(-1);
+  if (!resultsPassed(verificationResults) || lastExecutedCommands?.needsTestCreation) {
     cycleLog.finishedAt = new Date().toISOString();
-    cycleLog.outcome = "verification_failed";
-    cycleLog.failureSummary = failureSummary;
+    cycleLog.outcome = lastExecutedCommands?.needsTestCreation
+      ? "test_setup_missing"
+      : "verification_failed";
+    cycleLog.failureSummary =
+      failureSummary ||
+      "No runnable test command was detected. Codex must add a minimal test setup before this cycle can pass.";
     const logPath = writeJsonLog(config, "cycle", cycleLog);
     return { ok: false, outcome: cycleLog.outcome, logPath, plan };
   }
@@ -158,6 +240,21 @@ export async function runCycle(config) {
   return { ok: true, outcome: cycleLog.outcome, logPath, plan };
 }
 
+async function sleepUntilNextCycle(config, sleepMs, logger) {
+  const deadline = Date.now() + sleepMs;
+  const initialInstructionRevision = getInstructionRevision(config);
+
+  while (Date.now() < deadline) {
+    const waitMs = Math.min(2_000, deadline - Date.now());
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+
+    if (getInstructionRevision(config) !== initialInstructionRevision) {
+      logger.log("[ai-auto] new instructions detected; starting next cycle");
+      return;
+    }
+  }
+}
+
 export async function runLoop(config, logger = console) {
   const startedAt = Date.now();
   const deadline = startedAt + config.maxRuntimeMs;
@@ -177,7 +274,7 @@ export async function runLoop(config, logger = console) {
 
     const sleepMs = Math.min(config.cycleIntervalMs, remaining);
     logger.log(`[ai-auto] sleeping ${Math.round(sleepMs / 1000)}s`);
-    await new Promise((resolve) => setTimeout(resolve, sleepMs));
+    await sleepUntilNextCycle(config, sleepMs, logger);
   }
 
   logger.log("[ai-auto] run window complete");

@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import readline from "node:readline";
 import { loadConfig, loadDotEnv } from "./config.js";
+import { appendInstruction, clearInstructions, readInstructions } from "./instructions.js";
 import { runCycle, runLoop } from "./orchestrator.js";
 import { runCommand } from "./shell.js";
 
@@ -9,14 +11,20 @@ function parseArgs(argv) {
   const args = [...argv];
   const command = args.shift() || "once";
   const options = {
-    configPath: "config/ai-auto.json"
+    configPath: "config/ai-auto.json",
+    positionals: []
   };
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (arg === "--config" || arg === "-c") {
+    if (arg === "--") {
+      options.positionals.push(...args.slice(index + 1));
+      break;
+    } else if (arg === "--config" || arg === "-c") {
       options.configPath = args[index + 1];
       index += 1;
+    } else {
+      options.positionals.push(arg);
     }
   }
 
@@ -81,6 +89,69 @@ function initConfig() {
   return 0;
 }
 
+async function readPipedStdin() {
+  if (process.stdin.isTTY) {
+    return "";
+  }
+
+  let input = "";
+  for await (const chunk of process.stdin) {
+    input += chunk.toString();
+  }
+  return input;
+}
+
+function startInteractiveInstructionInput(config) {
+  if (!process.stdin.isTTY) {
+    return null;
+  }
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: true
+  });
+
+  console.log("[ai-auto] running. Type a natural-language instruction and press Enter.");
+  console.log("[ai-auto] commands: /show, /clear, /help. Stop with Ctrl+C.");
+  rl.setPrompt("[instruction] ");
+  rl.prompt();
+
+  rl.on("line", (line) => {
+    const text = line.trim();
+    if (!text) {
+      rl.prompt();
+      return;
+    }
+
+    try {
+      if (text === "/help") {
+        console.log("[ai-auto] Type any sentence to add it as a session instruction.");
+        console.log("[ai-auto] /show prints active instructions. /clear archives and clears them.");
+      } else if (text === "/show") {
+        const instructions = readInstructions(config);
+        console.log(instructions || "[ai-auto] no active instructions");
+      } else if (text === "/clear") {
+        const result = clearInstructions(config);
+        console.log(
+          result.cleared
+            ? `[ai-auto] instructions archived: ${result.archivePath}`
+            : `[ai-auto] no instruction file found: ${result.filePath}`
+        );
+      } else {
+        const result = appendInstruction(config, text);
+        console.log(`[ai-auto] instruction added: ${result.filePath}`);
+      }
+    } catch (error) {
+      console.error(`[ai-auto] failed to handle instruction: ${error.message}`);
+    }
+
+    rl.prompt();
+  });
+
+  return rl;
+}
+
 async function main() {
   loadDotEnv();
   const { command, options } = parseArgs(process.argv.slice(2));
@@ -91,6 +162,33 @@ async function main() {
   }
 
   const config = loadConfig(options.configPath);
+
+  if (command === "instruct") {
+    const instruction = options.positionals.join(" ") || (await readPipedStdin());
+    const result = appendInstruction(config, instruction);
+    console.log(`[ai-auto] instruction added: ${result.filePath}`);
+    return;
+  }
+
+  if (command === "instructions") {
+    const instructions = readInstructions(config);
+    if (!instructions) {
+      console.log("[ai-auto] no active instructions");
+      return;
+    }
+    console.log(instructions);
+    return;
+  }
+
+  if (command === "clear-instructions") {
+    const result = clearInstructions(config);
+    if (result.cleared) {
+      console.log(`[ai-auto] instructions archived: ${result.archivePath}`);
+    } else {
+      console.log(`[ai-auto] no instruction file found: ${result.filePath}`);
+    }
+    return;
+  }
 
   if (command === "doctor") {
     process.exitCode = await doctor(config);
@@ -106,12 +204,19 @@ async function main() {
   }
 
   if (command === "run") {
-    await runLoop(config);
+    const instructionInput = startInteractiveInstructionInput(config);
+    try {
+      await runLoop(config);
+    } finally {
+      instructionInput?.close();
+    }
     return;
   }
 
   console.error(`Unknown command: ${command}`);
-  console.error("Usage: ai-auto [init|doctor|once|run] [--config config/ai-auto.json]");
+  console.error(
+    "Usage: ai-auto [init|doctor|instruct|instructions|clear-instructions|once|run] [--config config/ai-auto.json]"
+  );
   process.exitCode = 1;
 }
 

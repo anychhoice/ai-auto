@@ -3,6 +3,22 @@ import { spawn } from "node:child_process";
 const DEFAULT_TIMEOUT_MS = 20 * 60_000;
 const DEFAULT_OUTPUT_LIMIT = 80_000;
 
+function writeStdinSafely(stream, input) {
+  stream.on("error", () => {
+    // Some short-lived commands close stdin before Node finishes writing.
+    // Treat that as command output, not as an unhandled process crash.
+  });
+
+  try {
+    if (input) {
+      stream.write(input);
+    }
+    stream.end();
+  } catch {
+    // The child process result still carries the useful stdout/stderr.
+  }
+}
+
 export function runCommand(command, options = {}) {
   const {
     cwd = process.cwd(),
@@ -69,10 +85,7 @@ export function runCommand(command, options = {}) {
       });
     });
 
-    if (input) {
-      child.stdin.write(input);
-    }
-    child.stdin.end();
+    writeStdinSafely(child.stdin, input);
   });
 }
 
@@ -142,10 +155,7 @@ export function runProcess(file, args = [], options = {}) {
       });
     });
 
-    if (input) {
-      child.stdin.write(input);
-    }
-    child.stdin.end();
+    writeStdinSafely(child.stdin, input);
   });
 }
 

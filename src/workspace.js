@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { detectProjectCommands } from "./detectCommands.js";
+import { readInstructions } from "./instructions.js";
 import { runCommand, runCommandList, runProcess, summarizeCommandResult } from "./shell.js";
 
 export async function getWorkspaceContext(config) {
@@ -26,6 +28,10 @@ export async function getWorkspaceContext(config) {
   return {
     workspace: config.workspace,
     mission: config.mission,
+    sessionInstructions: readInstructions(config),
+    detectedCommands: config.commandDiscovery.enabled
+      ? detectProjectCommands(config.workspace)
+      : { test: [], verify: [], reasons: [] },
     status: statusResults.map((result) => summarizeCommandResult(result, 8_000)).join("\n\n"),
     trackedFiles: tracked.stdout.trim().split(/\r?\n/).filter(Boolean).slice(0, 300),
     untrackedFiles: untracked.stdout.trim().split(/\r?\n/).filter(Boolean).slice(0, 300),

@@ -7,15 +7,26 @@
   "maxIterationsPerCycle": 3,
   "discussionRounds": 2,
   "logDir": ".ai-auto",
+  "instructionFile": ".ai-auto/instructions.md",
   "autoCommit": false,
   "allowPlannerCommandOverride": false,
+  "commandDiscovery": {
+    "enabled": true,
+    "requireTests": true,
+    "fallbackVerifyCommands": [
+      "git diff --check"
+    ]
+  },
+  "codexConsultation": {
+    "enabled": true,
+    "questionSource": "openai",
+    "sandbox": "read-only",
+    "approvalPolicy": "never",
+    "timeoutMs": 1200000
+  },
   "commands": {
-    "test": [
-      "npm test"
-    ],
-    "verify": [
-      "npm run check"
-    ],
+    "test": [],
+    "verify": [],
     "status": [
       "git status --short"
     ]
@@ -31,5 +42,5 @@
     "command": "",
     "requireCleanGit": true
   },
-  "mission": "Continuously improve the current workspace project. Prefer small, tested, reviewable changes. Never change secrets, credentials, or deployment configuration unless explicitly requested."
+  "mission": "First understand the target project, identify its architecture, tests, risks, and improvement opportunities, then choose one small, tested, reviewable improvement. Never change secrets, credentials, or deployment configuration unless explicitly requested."
 }
