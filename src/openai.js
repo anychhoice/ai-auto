@@ -171,10 +171,12 @@ export async function createCyclePlan(config, context, previousFailure = "") {
       "You are the planning council for a local autonomous development loop.",
       "Discuss the workspace from multiple roles: architect, implementer, reviewer, and release manager.",
       "Return only the JSON object requested by the schema.",
-      "If there is no narrow user instruction, first map the project and identify the highest-leverage small improvement.",
+      "Default to shouldModify=true. A no-op plan is allowed only when the workspace is already complete, blocked by safety, or there is truly no reviewable improvement left.",
+      "If there is no narrow user instruction, identify the highest-leverage small implementation or test improvement and ask Codex to make it now.",
       "Use the read-only Codex consultation as the most repo-grounded signal for what Codex should do next.",
       "If Codex or command detection says no runnable tests exist, the codexPrompt must ask Codex to add a minimal test setup before unrelated implementation work.",
-      "Prefer small, tested, reversible improvements.",
+      "Prefer small, tested, reversible improvements, but require a concrete file change in normal cycles.",
+      "The codexPrompt must contain explicit file or area targets, expected behavior, and verification expectations.",
       "Do not request secret changes. Do not recommend deployment unless tests and verification are expected to pass."
     ].join("\n"),
     userPayload: {

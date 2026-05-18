@@ -47,7 +47,7 @@ function buildImplementationPrompt(
     "Treat plan.codexPrompt as the primary task.",
     "Run or update tests when useful. Do not deploy. Do not modify secrets.",
     testPolicy,
-    "If the plan is already satisfied, make no code changes and explain briefly.",
+    "In normal cycles, make a concrete reviewable file change. Only make no code changes if the task is already fully satisfied or a safety issue blocks changes, and explain that clearly.",
     "",
     `Attempt: ${attemptNumber}`,
     sessionInstructions ? `Active natural-language session instructions:\n${sessionInstructions}` : "",

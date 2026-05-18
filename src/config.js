@@ -42,7 +42,7 @@ export const DEFAULT_CONFIG = {
     requireCleanGit: true
   },
   mission:
-    "First understand the target project, identify its architecture, tests, risks, and improvement opportunities, then choose one small, tested, reviewable improvement. Never change secrets, credentials, or deployment configuration unless explicitly requested."
+    "Actively improve the target project every cycle. First understand the architecture, tests, risks, and improvement opportunities, then make one concrete, small, tested, reviewable code or test change. Avoid no-op analysis cycles unless the workspace is already cleanly complete or a safety concern blocks changes. Never change secrets, credentials, or deployment configuration unless explicitly requested."
 };
 
 export function parseDuration(value) {
