@@ -1,0 +1,35 @@
+{
+  "workspace": ".",
+  "model": "gpt-5.5",
+  "reasoningEffort": "high",
+  "cycleInterval": "30m",
+  "maxRuntime": "24h",
+  "maxIterationsPerCycle": 3,
+  "discussionRounds": 2,
+  "logDir": ".ai-auto",
+  "autoCommit": false,
+  "allowPlannerCommandOverride": false,
+  "commands": {
+    "test": [
+      "npm test"
+    ],
+    "verify": [
+      "npm run check"
+    ],
+    "status": [
+      "git status --short"
+    ]
+  },
+  "codex": {
+    "command": "codex",
+    "model": "gpt-5.5",
+    "sandbox": "workspace-write",
+    "approvalPolicy": "never"
+  },
+  "deploy": {
+    "enabled": false,
+    "command": "",
+    "requireCleanGit": true
+  },
+  "mission": "Continuously improve the current workspace project. Prefer small, tested, reviewable changes. Never change secrets, credentials, or deployment configuration unless explicitly requested."
+}

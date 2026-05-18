@@ -1,0 +1,135 @@
+import fs from "node:fs";
+import path from "node:path";
+
+export const DEFAULT_CONFIG = {
+  workspace: ".",
+  model: process.env.AI_AUTO_MODEL || "gpt-5.5",
+  reasoningEffort: "high",
+  cycleInterval: "30m",
+  maxRuntime: "24h",
+  maxIterationsPerCycle: 3,
+  discussionRounds: 2,
+  logDir: ".ai-auto",
+  autoCommit: false,
+  allowPlannerCommandOverride: false,
+  commands: {
+    test: ["npm test"],
+    verify: ["npm run check"],
+    status: ["git status --short"]
+  },
+  codex: {
+    command: "codex",
+    model: process.env.AI_AUTO_CODEX_MODEL || "gpt-5.5",
+    sandbox: "workspace-write",
+    approvalPolicy: "never"
+  },
+  deploy: {
+    enabled: false,
+    command: "",
+    requireCleanGit: true
+  },
+  mission:
+    "Continuously improve the current workspace project. Prefer small, tested, reviewable changes. Never change secrets, credentials, or deployment configuration unless explicitly requested."
+};
+
+export function parseDuration(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    throw new TypeError(`Duration must be a string or number, received ${typeof value}`);
+  }
+
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)(ms|s|m|h|d)$/i);
+  if (!match) {
+    throw new Error(`Invalid duration "${value}". Use values like 30m, 24h, or 2d.`);
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const multipliers = {
+    ms: 1,
+    s: 1_000,
+    m: 60_000,
+    h: 3_600_000,
+    d: 86_400_000
+  };
+
+  return amount * multipliers[unit];
+}
+
+export function resolveWorkspace(workspace, configDir = process.cwd()) {
+  const base = path.isAbsolute(workspace) ? workspace : path.resolve(configDir, workspace);
+  return fs.realpathSync(base);
+}
+
+export function deepMerge(base, override) {
+  if (!override || typeof override !== "object" || Array.isArray(override)) {
+    return override === undefined ? base : override;
+  }
+
+  const output = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      base &&
+      typeof base[key] === "object" &&
+      !Array.isArray(base[key])
+    ) {
+      output[key] = deepMerge(base[key], value);
+    } else {
+      output[key] = value;
+    }
+  }
+  return output;
+}
+
+export function loadConfig(configPath = "config/ai-auto.json") {
+  const absoluteConfigPath = path.resolve(process.cwd(), configPath);
+  let fileConfig = {};
+
+  if (fs.existsSync(absoluteConfigPath)) {
+    fileConfig = JSON.parse(fs.readFileSync(absoluteConfigPath, "utf8"));
+  }
+
+  const config = deepMerge(DEFAULT_CONFIG, fileConfig);
+  const workspace = resolveWorkspace(config.workspace, process.cwd());
+  const logDir = path.isAbsolute(config.logDir)
+    ? config.logDir
+    : path.resolve(workspace, config.logDir);
+
+  return {
+    ...config,
+    workspace,
+    logDir,
+    maxRuntimeMs: parseDuration(config.maxRuntime),
+    cycleIntervalMs: parseDuration(config.cycleInterval)
+  };
+}
+
+export function loadDotEnv(envPath = ".env") {
+  const absolutePath = path.resolve(process.cwd(), envPath);
+  if (!fs.existsSync(absolutePath)) {
+    return;
+  }
+
+  const lines = fs.readFileSync(absolutePath, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) {
+      continue;
+    }
+
+    const index = trimmed.indexOf("=");
+    const key = trimmed.slice(0, index).trim();
+    const rawValue = trimmed.slice(index + 1).trim();
+    const value = rawValue.replace(/^["']|["']$/g, "");
+
+    if (!process.env[key]) {
+      process.env[key] = value;
+    }
+  }
+}

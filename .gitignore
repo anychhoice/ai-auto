@@ -1,0 +1,7 @@
+.env
+.ai-auto/
+config/ai-auto.json
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

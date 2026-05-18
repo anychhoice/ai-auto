@@ -1,0 +1,20 @@
+{
+  "name": "ai-auto",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local OpenAI + Codex orchestration loop for discussing, developing, testing, improving, and optionally deploying a workspace project.",
+  "type": "module",
+  "bin": {
+    "ai-auto": "./src/cli.js"
+  },
+  "scripts": {
+    "doctor": "node src/cli.js doctor",
+    "once": "node src/cli.js once",
+    "run": "node src/cli.js run",
+    "test": "node --test",
+    "check": "node --check src/cli.js && node --check src/config.js && node --check src/codex.js && node --check src/openai.js && node --check src/orchestrator.js && node --check src/shell.js && node --check src/workspace.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
