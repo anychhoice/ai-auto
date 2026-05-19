@@ -2,14 +2,14 @@
 
 `ai-auto`는 OpenAI API와 Codex CLI를 함께 사용해서 로컬 프로젝트를 자동으로 개선하는 오케스트레이터입니다.
 
-OpenAI API는 현재 프로젝트 상태를 읽고 “무엇을 고칠지” 토론하고 계획합니다. 계획 전에는 OpenAI가 Codex에게 물어볼 read-only 질문을 만들고, `ai-auto`가 그 질문으로 Codex CLI를 호출합니다. OpenAI는 Codex의 답변까지 보고 최종 계획을 만들고, Codex CLI는 그 계획을 받아 실제 코드를 수정합니다.
+기본값에서는 Codex CLI가 read-only planner로 먼저 프로젝트, 로그, 벤치마크를 직접 읽고 “무엇을 고칠지” 계획합니다. 그 다음 별도의 Codex 실행이 `workspace-write` sandbox에서 실제 코드를 수정하고 테스트합니다. OpenAI API planner는 fallback으로 남겨둘 수 있습니다.
 
 기본 설정은 안전하게 잡혀 있습니다.
 
 - 자동 배포는 꺼져 있습니다.
 - 자동 커밋도 꺼져 있습니다.
 - Codex는 `workspace-write` sandbox 안에서 실행됩니다.
-- 계획 전 Codex 상담은 `read-only` sandbox에서 실행됩니다.
+- Codex planner는 `read-only` sandbox에서 실행됩니다.
 - 테스트/검증 명령은 프로젝트 파일을 보고 자동 탐지합니다.
 - 테스트가 없으면 그냥 통과시키지 않고 Codex에게 테스트 셋업부터 만들게 합니다.
 - 모델이 임의로 제안한 테스트 명령은 기본적으로 실행하지 않습니다.
@@ -19,9 +19,7 @@ OpenAI API는 현재 프로젝트 상태를 읽고 “무엇을 고칠지” 토
 ```text
 workspace 상태 읽기
 → 추가 자연어 지시가 있으면 함께 읽기
-→ OpenAI가 Codex에게 물어볼 read-only 질문 생성
-→ Codex CLI에게 read-only로 프로젝트 구조와 테스트 전략 질문
-→ OpenAI API가 Codex 답변까지 보고 실행 계획 생성
+→ Codex CLI가 read-only로 프로젝트/로그/벤치마크를 직접 읽고 실행 계획 생성
 → Codex CLI가 코드 수정
 → 테스트/검증 명령 자동 탐지
 → 테스트가 없으면 Codex에게 테스트 작성 요청
@@ -36,23 +34,27 @@ workspace 상태 읽기
 
 ## 구성 요소
 
-### OpenAI API
+### Planner
 
-[src/openai.js](./src/openai.js)가 OpenAI Responses API를 호출합니다.
+[src/planner.js](./src/planner.js)가 다음 cycle의 계획을 만듭니다.
 
-OpenAI API의 역할은 다음과 같습니다.
+기본 planner는 Codex입니다.
 
 - 현재 Git 상태 확인
 - 파일 목록 확인
 - `package.json` 확인
 - 프로젝트의 목표 확인
-- Codex에게 물어볼 read-only 질문 생성
-- read-only Codex 상담 결과 확인
-- 내부 토론 생성
+- 기존 로그와 벤치마크 구조 확인
 - Codex에게 전달할 구현 프롬프트 작성
 - 테스트와 검증 방향 제안
 - 커밋 메시지 제안
 - 배포 가능성 판단
+
+Codex planner가 실패하거나 JSON 계획을 만들지 못하면, `planner.fallbackToOpenAI`가 `true`인 경우 [src/openai.js](./src/openai.js)의 OpenAI planner로 fallback합니다.
+
+### OpenAI API
+
+[src/openai.js](./src/openai.js)는 OpenAI Responses API fallback planner와 `/whatnow` 요약에 사용됩니다.
 
 ### Codex CLI
 
@@ -60,9 +62,9 @@ OpenAI API의 역할은 다음과 같습니다.
 
 Codex CLI의 역할은 다음과 같습니다.
 
-- OpenAI 계획 전 read-only 상담자로 프로젝트를 파악
+- read-only planner로 프로젝트와 벤치마크를 직접 파악
 - 프로젝트 코드 읽기
-- OpenAI API가 만든 계획에 따라 코드 수정
+- planner가 만든 계획에 따라 코드 수정
 - 필요한 경우 테스트 추가 또는 수정
 - 실패 로그를 바탕으로 재수정
 
@@ -74,8 +76,7 @@ Codex CLI의 역할은 다음과 같습니다.
 
 - workspace 상태 수집
 - 테스트/검증 명령 자동 탐지
-- Codex read-only 상담 실행
-- OpenAI API 계획 요청
+- Codex planner 또는 OpenAI fallback planner 실행
 - Codex 실행
 - 테스트 실행
 - 검증 실행
@@ -183,15 +184,14 @@ npm run once
 한 cycle은 다음 작업을 수행합니다.
 
 1. workspace 상태를 읽습니다.
-2. OpenAI API로 실행 계획을 만듭니다.
-3. Codex CLI에게 read-only로 프로젝트를 먼저 물어봅니다.
-4. Codex 답변을 OpenAI 계획 입력에 포함합니다.
-5. Codex CLI로 코드 수정을 시도합니다.
-6. 테스트/검증 명령을 자동 탐지합니다.
-7. 테스트가 없으면 Codex에게 테스트 셋업을 먼저 만들게 합니다.
-8. 테스트와 검증 명령을 실행합니다.
-9. 실패하면 설정된 횟수만큼 Codex에게 재수정을 요청합니다.
-10. 결과 로그를 `.ai-auto/`에 저장합니다.
+2. Codex CLI planner가 read-only로 프로젝트/로그/벤치마크를 읽고 실행 계획을 만듭니다.
+3. Codex planner가 실패하면 설정에 따라 OpenAI planner로 fallback합니다.
+4. Codex CLI로 코드 수정을 시도합니다.
+5. 테스트/검증 명령을 자동 탐지합니다.
+6. 테스트가 없으면 Codex에게 테스트 셋업을 먼저 만들게 합니다.
+7. 테스트와 검증 명령을 실행합니다.
+8. 실패하면 설정된 횟수만큼 Codex에게 재수정을 요청합니다.
+9. 결과 로그를 `.ai-auto/`에 저장합니다.
 
 ## 24시간 실행하기
 
@@ -381,7 +381,7 @@ Codex가 수정할 프로젝트 경로입니다.
 }
 ```
 
-OpenAI API가 토론과 계획 생성에 사용할 모델입니다.
+OpenAI fallback planner와 `/whatnow` 요약에 사용할 모델입니다. 기본 Codex planner와 구현 Codex 모델은 `codex.model`을 사용합니다.
 
 ### reasoningEffort
 
@@ -391,7 +391,7 @@ OpenAI API가 토론과 계획 생성에 사용할 모델입니다.
 }
 ```
 
-계획 생성 시 reasoning 강도를 지정합니다.
+OpenAI fallback planner가 사용할 reasoning 강도입니다.
 
 ### maxRuntime
 
@@ -478,6 +478,30 @@ npm run instruct -- "이번 cycle에서는 테스트 보강을 우선해."
 
 `fallbackVerifyCommands`는 테스트가 있든 없든 마지막에 추가로 실행하는 안전 검증입니다. 기본값은 whitespace 문제를 잡는 `git diff --check`입니다.
 
+### planner
+
+```json
+{
+  "planner": {
+    "mode": "codex",
+    "fallbackToOpenAI": true,
+    "sandbox": "read-only",
+    "approvalPolicy": "never",
+    "timeoutMs": 1200000
+  }
+}
+```
+
+다음 cycle 계획을 누가 만들지 정합니다.
+
+- `mode`: `"codex"` 또는 `"openai"`
+- `fallbackToOpenAI`: Codex planner 실패 시 OpenAI planner로 fallback할지 여부
+- `sandbox`: Codex planner sandbox. 기본은 `read-only`
+- `approvalPolicy`: Codex planner 승인 정책
+- `timeoutMs`: Codex planner timeout
+
+기본값은 `codex`입니다. Codex planner는 실제 repo, 로그, benchmark 파일을 직접 읽어서 계획 JSON을 만들고, 구현 Codex에게 넘길 `codexPrompt`를 작성합니다.
+
 ### codexConsultation
 
 ```json
@@ -492,7 +516,7 @@ npm run instruct -- "이번 cycle에서는 테스트 보강을 우선해."
 }
 ```
 
-OpenAI가 계획하기 전에 Codex CLI에게 프로젝트를 먼저 물어보는 단계입니다.
+OpenAI planner를 사용할 때, OpenAI가 계획하기 전에 Codex CLI에게 프로젝트를 먼저 물어보는 단계입니다. `planner.mode: "codex"`인 기본 설정에서는 Codex planner가 직접 repo를 읽으므로 별도 consultation은 건너뜁니다.
 
 기본값인 `questionSource: "openai"`에서는 OpenAI가 먼저 “Codex에게 무엇을 물어볼지” 질문을 생성합니다. 그 질문을 `ai-auto`가 Codex CLI에 전달하고, Codex 답변을 다시 OpenAI 최종 계획 입력에 넣습니다.
 
@@ -561,9 +585,9 @@ Codex가 수정한 뒤 실행할 테스트 명령을 사람이 직접 고정하�
 }
 ```
 
-OpenAI API가 계획을 만들면서 테스트 명령을 제안할 수 있습니다. 하지만 기본값에서는 그 명령을 그대로 실행하지 않습니다.
+planner가 계획을 만들면서 테스트 명령을 제안할 수 있습니다. 하지만 기본값에서는 그 명령을 그대로 실행하지 않습니다.
 
-`false`이면 OpenAI가 제안한 명령은 참고만 하고, 실제 실행은 자동 탐지된 명령과 config에 명시된 명령만 사용합니다.
+`false`이면 planner가 제안한 명령은 참고만 하고, 실제 실행은 자동 탐지된 명령과 config에 명시된 명령만 사용합니다.
 
 `true`로 바꾸면 모델이 제안한 명령을 실행할 수 있습니다. 이 옵션은 신뢰할 수 있는 sandbox 환경에서만 켜는 것을 권장합니다.
 
@@ -601,7 +625,7 @@ Codex CLI 실행 방식을 설정합니다.
 
 기본값은 `false`입니다. 처음에는 사람이 변경사항을 직접 확인하는 것을 권장합니다.
 
-자동 커밋을 켜면 OpenAI API가 제안한 커밋 메시지로 다음 명령을 실행합니다.
+자동 커밋을 켜면 planner가 제안한 커밋 메시지로 다음 명령을 실행합니다.
 
 ```bash
 git add -A
@@ -738,8 +762,8 @@ AI에게 주는 장기 목표입니다.
 로그에는 다음 정보가 들어갑니다.
 
 - 시작 시간
-- Codex read-only 상담 결과
-- OpenAI API가 만든 계획
+- Codex planner 또는 OpenAI fallback planner 결과
+- planner가 만든 계획
 - 자동 탐지된 테스트/검증 명령
 - Codex 실행 결과
 - 테스트 결과
@@ -840,7 +864,7 @@ npm run check
 
 ## 현재 제한
 
-- OpenAI API 키가 필요합니다.
+- OpenAI API 키가 필요합니다. 기본 계획은 Codex가 만들지만 `/whatnow` 요약과 fallback planner가 OpenAI API를 사용합니다.
 - Codex CLI가 로컬에 설치되어 있어야 합니다.
 - 자동 탐지하지 못하는 특수한 프로젝트는 `commands.test`나 `commands.verify`를 직접 지정할 수 있습니다.
 - 배포 명령도 프로젝트마다 직접 설정해야 합니다.

@@ -31,3 +31,30 @@ test("deepMerge preserves nested defaults", () => {
     commands: { test: ["pnpm test"], verify: ["npm run check"] }
   });
 });
+
+test("deepMerge preserves codex planner defaults", () => {
+  const merged = deepMerge(
+    {
+      planner: {
+        mode: "codex",
+        fallbackToOpenAI: true,
+        sandbox: "read-only",
+        approvalPolicy: "never",
+        timeoutMs: 1_200_000
+      }
+    },
+    {
+      planner: { fallbackToOpenAI: false }
+    }
+  );
+
+  assert.deepEqual(merged, {
+    planner: {
+      mode: "codex",
+      fallbackToOpenAI: false,
+      sandbox: "read-only",
+      approvalPolicy: "never",
+      timeoutMs: 1_200_000
+    }
+  });
+});

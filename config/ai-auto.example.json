@@ -23,6 +23,13 @@
       "git diff --check"
     ]
   },
+  "planner": {
+    "mode": "codex",
+    "fallbackToOpenAI": true,
+    "sandbox": "read-only",
+    "approvalPolicy": "never",
+    "timeoutMs": 1200000
+  },
   "codexConsultation": {
     "enabled": true,
     "questionSource": "openai",

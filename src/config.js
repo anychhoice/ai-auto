@@ -24,6 +24,13 @@ export const DEFAULT_CONFIG = {
     requireTests: true,
     fallbackVerifyCommands: ["git diff --check"]
   },
+  planner: {
+    mode: "codex",
+    fallbackToOpenAI: true,
+    sandbox: "read-only",
+    approvalPolicy: "never",
+    timeoutMs: 1_200_000
+  },
   codexConsultation: {
     enabled: true,
     questionSource: "openai",

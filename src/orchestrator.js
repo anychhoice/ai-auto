@@ -4,7 +4,7 @@ import { consultCodex } from "./consultation.js";
 import { runCodex } from "./codex.js";
 import { detectProjectCommands, resolveVerificationCommands } from "./detectCommands.js";
 import { getInstructionRevision, readInstructions } from "./instructions.js";
-import { createCyclePlan } from "./openai.js";
+import { createCyclePlan } from "./planner.js";
 import { runCommand, runCommandList, summarizeCommandResult } from "./shell.js";
 import { sendTelegramCycleReport } from "./telegram.js";
 import { commitAll, getWorkspaceContext, isGitClean } from "./workspace.js";
@@ -100,19 +100,36 @@ function isAbortError(error) {
   return error?.name === "AbortError";
 }
 
+function plannerMode(config) {
+  return config.planner?.mode || "codex";
+}
+
 export async function runCycle(config, logger = console, options = {}) {
   const forceSignal = getForceSignal(options);
   const context = await getWorkspaceContext(config, {
     signal: forceSignal,
     runState: options.runState || null
   });
-  logger.log("[ai-auto] consulting Codex in read-only mode");
-  context.codexConsultation = await consultCodex(config, context, { signal: forceSignal });
-  logger.log(
-    `[ai-auto] Codex consultation: ${context.codexConsultation.ok ? "ok" : "failed"}`
-  );
-  logger.log("[ai-auto] planning implementation with OpenAI");
-  const plan = await createCyclePlan(config, context, "", { signal: forceSignal });
+  if (plannerMode(config) === "codex") {
+    context.codexConsultation = {
+      enabled: false,
+      ok: true,
+      stdout: "",
+      stderr: "",
+      command: "",
+      skippedReason: "codex planner inspects the repository directly"
+    };
+    logger.log("[ai-auto] skipping separate Codex consultation; Codex planner will inspect read-only");
+  } else {
+    logger.log("[ai-auto] consulting Codex in read-only mode");
+    context.codexConsultation = await consultCodex(config, context, { signal: forceSignal });
+    logger.log(
+      `[ai-auto] Codex consultation: ${context.codexConsultation.ok ? "ok" : "failed"}`
+    );
+  }
+  logger.log(`[ai-auto] planning implementation with ${plannerMode(config)}`);
+  const planning = await createCyclePlan(config, context, "", { signal: forceSignal });
+  const plan = planning.plan;
   logger.log(`[ai-auto] plan: ${plan.shouldModify ? "modify workspace" : "no change"}`);
   const initialCommands = config.commandDiscovery.enabled
     ? resolveVerificationCommands(config, plan, context.detectedCommands)
@@ -143,6 +160,7 @@ export async function runCycle(config, logger = console, options = {}) {
     startedAt: new Date().toISOString(),
     sessionInstructionsAtPlan: context.sessionInstructions,
     codexConsultation: context.codexConsultation,
+    planner: planning.planner,
     plan,
     detectedCommands: context.detectedCommands,
     executedCommands: [],
