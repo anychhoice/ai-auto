@@ -44,7 +44,7 @@ export function buildCodexConsultationPrompt(config, context, openAiQuestion) {
   ].join("\n");
 }
 
-export async function consultCodex(config, context) {
+export async function consultCodex(config, context, options = {}) {
   if (!config.codexConsultation?.enabled) {
     return {
       enabled: false,
@@ -61,13 +61,14 @@ export async function consultCodex(config, context) {
           question:
             "Inspect this repository read-only. Explain its structure, existing or missing tests, safe verification commands, open questions for the operator, and the smallest useful next improvement."
         }
-      : await createCodexConsultationQuestion(config, context);
+      : await createCodexConsultationQuestion(config, context, { signal: options.signal });
   const prompt = buildCodexConsultationPrompt(config, context, questionResult.question);
   const result = await runCodex(config, prompt, {
     sandbox: config.codexConsultation.sandbox || "read-only",
     approvalPolicy: config.codexConsultation.approvalPolicy || "never",
     timeoutMs: config.codexConsultation.timeoutMs || 20 * 60_000,
-    ephemeral: true
+    ephemeral: true,
+    signal: options.signal
   });
 
   return {

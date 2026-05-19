@@ -6,6 +6,7 @@ import { loadConfig, loadDotEnv } from "./config.js";
 import { appendInstruction, clearInstructions, readInstructions } from "./instructions.js";
 import { runCycle, runLoop } from "./orchestrator.js";
 import { runCommand } from "./shell.js";
+import { createShutdownController } from "./shutdown.js";
 import { runTelegramCommandLoop, telegramCommandsEnabled } from "./telegram.js";
 
 function parseArgs(argv) {
@@ -219,21 +220,28 @@ async function main() {
   }
 
   if (command === "once") {
-    const result = await runCycle(config);
-    console.log(`[ai-auto] ${result.outcome}`);
-    console.log(`[ai-auto] log: ${result.logPath}`);
-    process.exitCode = result.ok ? 0 : 1;
+    const shutdown = createShutdownController();
+    try {
+      const result = await runCycle(config, console, { shutdown });
+      console.log(`[ai-auto] ${result.outcome}`);
+      console.log(`[ai-auto] log: ${result.logPath}`);
+      process.exitCode = result.ok ? 0 : 1;
+    } finally {
+      shutdown.dispose();
+    }
     return;
   }
 
   if (command === "run") {
+    const shutdown = createShutdownController();
     const instructionInput = startInteractiveInstructionInput(config);
     const telegramCommands = startEmbeddedTelegramCommands(config);
     try {
-      await runLoop(config);
+      await runLoop(config, console, { shutdown });
     } finally {
       await telegramCommands.stop();
       instructionInput?.close();
+      shutdown.dispose();
     }
     return;
   }

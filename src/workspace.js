@@ -4,20 +4,23 @@ import { detectProjectCommands } from "./detectCommands.js";
 import { readInstructions } from "./instructions.js";
 import { runCommand, runCommandList, runProcess, summarizeCommandResult } from "./shell.js";
 
-export async function getWorkspaceContext(config) {
+export async function getWorkspaceContext(config, options = {}) {
   const statusResults = await runCommandList(config.commands.status, {
     cwd: config.workspace,
-    timeoutMs: 60_000
+    timeoutMs: 60_000,
+    signal: options.signal
   });
 
   const tracked = await runCommand("git ls-files", {
     cwd: config.workspace,
-    timeoutMs: 60_000
+    timeoutMs: 60_000,
+    signal: options.signal
   });
 
   const untracked = await runCommand("git ls-files --others --exclude-standard", {
     cwd: config.workspace,
-    timeoutMs: 60_000
+    timeoutMs: 60_000,
+    signal: options.signal
   });
 
   const packageJsonPath = path.join(config.workspace, "package.json");
@@ -39,18 +42,20 @@ export async function getWorkspaceContext(config) {
   };
 }
 
-export async function isGitClean(workspace) {
+export async function isGitClean(workspace, options = {}) {
   const result = await runCommand("git status --short", {
     cwd: workspace,
-    timeoutMs: 60_000
+    timeoutMs: 60_000,
+    signal: options.signal
   });
   return result.exitCode === 0 && result.stdout.trim() === "";
 }
 
-export async function commitAll(workspace, message) {
+export async function commitAll(workspace, message, options = {}) {
   const add = await runProcess("git", ["add", "-A"], {
     cwd: workspace,
-    timeoutMs: 60_000
+    timeoutMs: 60_000,
+    signal: options.signal
   });
   if (add.exitCode !== 0) {
     return [add];
@@ -58,7 +63,8 @@ export async function commitAll(workspace, message) {
 
   const commit = await runProcess("git", ["commit", "-m", message], {
     cwd: workspace,
-    timeoutMs: 120_000
+    timeoutMs: 120_000,
+    signal: options.signal
   });
   return [add, commit];
 }

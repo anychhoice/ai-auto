@@ -84,7 +84,11 @@ export function extractOutputText(response) {
   return parts.join("\n").trim();
 }
 
-async function createStructuredResponse(config, { systemPrompt, userPayload, schemaName, schema }) {
+async function createStructuredResponse(
+  config,
+  { systemPrompt, userPayload, schemaName, schema },
+  options = {}
+) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is required. Add it to .env or export it in your shell.");
@@ -121,7 +125,8 @@ async function createStructuredResponse(config, { systemPrompt, userPayload, sch
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: options.signal
   });
 
   const payload = await response.json().catch(() => ({}));
@@ -138,7 +143,7 @@ async function createStructuredResponse(config, { systemPrompt, userPayload, sch
   return JSON.parse(outputText);
 }
 
-export async function createCodexConsultationQuestion(config, context) {
+export async function createCodexConsultationQuestion(config, context, options = {}) {
   return createStructuredResponse(config, {
     schemaName: "ai_auto_codex_consultation_question",
     schema: CONSULTATION_QUESTION_SCHEMA,
@@ -160,10 +165,10 @@ export async function createCodexConsultationQuestion(config, context) {
       untrackedFiles: context.untrackedFiles,
       packageJson: context.packageJson
     }
-  });
+  }, options);
 }
 
-export async function createCyclePlan(config, context, previousFailure = "") {
+export async function createCyclePlan(config, context, previousFailure = "", options = {}) {
   return createStructuredResponse(config, {
     schemaName: "ai_auto_cycle_plan",
     schema: PLAN_SCHEMA,
@@ -196,5 +201,5 @@ export async function createCyclePlan(config, context, previousFailure = "") {
       configuredVerifyCommands: config.commands.verify,
       previousFailure
     }
-  });
+  }, options);
 }

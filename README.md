@@ -214,6 +214,20 @@ npm run run
 
 실행 중 자연어 지시가 추가되면 30분을 모두 기다리지 않고 다음 cycle을 시작합니다.
 
+## 안전하게 종료하기
+
+`npm run once` 또는 `npm run run` 실행 중 `Ctrl+C`를 한 번 누르면 graceful shutdown이 요청됩니다.
+
+- 현재 Codex 작업, 테스트, 커밋, 배포 명령은 즉시 끊지 않습니다.
+- 진행 중인 cycle이 정리되면 다음 cycle을 시작하지 않고 종료합니다.
+- cycle 사이에서 대기 중이면 바로 다음 cycle로 넘어가지 않고 종료합니다.
+
+한 번 더 `Ctrl+C`를 누르면 forced shutdown으로 전환됩니다.
+
+- 진행 중인 Codex, 테스트, 검증, 배포 자식 프로세스에 `SIGTERM`을 보냅니다.
+- 5초 안에 종료되지 않으면 `SIGKILL`로 한 번 더 끊습니다.
+- 이 경우 작업 중이던 workspace가 dirty 상태로 남을 수 있으니, 종료 후 `git status`로 확인하는 편이 좋습니다.
+
 ## 실행 중 자연어로 지시하기
 
 `npm run run`으로 장시간 루프가 도는 중에도 자연어 지시를 추가할 수 있습니다.

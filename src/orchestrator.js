@@ -80,15 +80,36 @@ function buildRepairPrompt(config, plan, failureSummary, attemptNumber, sessionI
   ].join("\n");
 }
 
-export async function runCycle(config, logger = console) {
-  const context = await getWorkspaceContext(config);
+function getForceSignal(options) {
+  return options.shutdown?.forceSignal || options.signal;
+}
+
+function isForceShutdown(options) {
+  return Boolean(options.shutdown?.forceRequested || getForceSignal(options)?.aborted);
+}
+
+function writeForceShutdownLog(config, cycleLog, plan) {
+  cycleLog.finishedAt = new Date().toISOString();
+  cycleLog.outcome = "force_shutdown";
+  cycleLog.failureSummary = "Forced shutdown requested by operator.";
+  const logPath = writeJsonLog(config, "cycle", cycleLog);
+  return { ok: false, outcome: cycleLog.outcome, logPath, plan };
+}
+
+function isAbortError(error) {
+  return error?.name === "AbortError";
+}
+
+export async function runCycle(config, logger = console, options = {}) {
+  const forceSignal = getForceSignal(options);
+  const context = await getWorkspaceContext(config, { signal: forceSignal });
   logger.log("[ai-auto] consulting Codex in read-only mode");
-  context.codexConsultation = await consultCodex(config, context);
+  context.codexConsultation = await consultCodex(config, context, { signal: forceSignal });
   logger.log(
     `[ai-auto] Codex consultation: ${context.codexConsultation.ok ? "ok" : "failed"}`
   );
   logger.log("[ai-auto] planning implementation with OpenAI");
-  const plan = await createCyclePlan(config, context);
+  const plan = await createCyclePlan(config, context, "", { signal: forceSignal });
   logger.log(`[ai-auto] plan: ${plan.shouldModify ? "modify workspace" : "no change"}`);
   const initialCommands = config.commandDiscovery.enabled
     ? resolveVerificationCommands(config, plan, context.detectedCommands)
@@ -128,6 +149,10 @@ export async function runCycle(config, logger = console) {
     commit: null
   };
 
+  if (isForceShutdown(options)) {
+    return writeForceShutdownLog(config, cycleLog, plan);
+  }
+
   if (!plan.shouldModify) {
     cycleLog.finishedAt = new Date().toISOString();
     cycleLog.outcome = "no_change_requested";
@@ -160,8 +185,12 @@ export async function runCycle(config, logger = console) {
           );
 
     logger.log(`[ai-auto] running Codex implementation attempt ${attempt} in ${config.codex.sandbox}`);
-    const codexResult = await runCodex(config, prompt);
+    const codexResult = await runCodex(config, prompt, { signal: forceSignal });
     cycleLog.codex.push(codexResult);
+
+    if (isForceShutdown(options)) {
+      return writeForceShutdownLog(config, cycleLog, plan);
+    }
 
     const detectedCommands = config.commandDiscovery.enabled
       ? detectProjectCommands(config.workspace)
@@ -183,9 +212,14 @@ export async function runCycle(config, logger = console) {
     logger.log(`[ai-auto] running ${commands.length} verification command(s)`);
     verificationResults = await runCommandList(commands, {
       cwd: config.workspace,
-      timeoutMs: 30 * 60_000
+      timeoutMs: 30 * 60_000,
+      signal: forceSignal
     });
     cycleLog.verification.push(verificationResults);
+
+    if (isForceShutdown(options)) {
+      return writeForceShutdownLog(config, cycleLog, plan);
+    }
 
     if (
       codexResult.exitCode === 0 &&
@@ -221,7 +255,10 @@ export async function runCycle(config, logger = console) {
   }
 
   if (config.autoCommit) {
-    cycleLog.commit = await commitAll(config.workspace, plan.commitMessage);
+    cycleLog.commit = await commitAll(config.workspace, plan.commitMessage, { signal: forceSignal });
+    if (isForceShutdown(options)) {
+      return writeForceShutdownLog(config, cycleLog, plan);
+    }
   }
 
   if (config.deploy.enabled) {
@@ -230,7 +267,10 @@ export async function runCycle(config, logger = console) {
         skipped: true,
         reason: "deploy.enabled is true, but deploy.command is empty"
       };
-    } else if (config.deploy.requireCleanGit && !(await isGitClean(config.workspace))) {
+    } else if (
+      config.deploy.requireCleanGit &&
+      !(await isGitClean(config.workspace, { signal: forceSignal }))
+    ) {
       cycleLog.deploy = {
         skipped: true,
         reason: "deploy.requireCleanGit is true, but the workspace has uncommitted changes"
@@ -238,8 +278,13 @@ export async function runCycle(config, logger = console) {
     } else {
       cycleLog.deploy = await runCommand(config.deploy.command, {
         cwd: config.workspace,
-        timeoutMs: 60 * 60_000
+        timeoutMs: 60 * 60_000,
+        signal: forceSignal
       });
+    }
+
+    if (isForceShutdown(options)) {
+      return writeForceShutdownLog(config, cycleLog, plan);
     }
   }
 
@@ -249,13 +294,22 @@ export async function runCycle(config, logger = console) {
   return { ok: true, outcome: cycleLog.outcome, logPath, plan };
 }
 
-async function sleepUntilNextCycle(config, sleepMs, logger) {
+async function sleepUntilNextCycle(config, sleepMs, logger, options = {}) {
   const deadline = Date.now() + sleepMs;
   const initialInstructionRevision = getInstructionRevision(config);
 
-  while (Date.now() < deadline) {
+  while (
+    Date.now() < deadline &&
+    !options.shutdown?.gracefulRequested &&
+    !isForceShutdown(options)
+  ) {
     const waitMs = Math.min(2_000, deadline - Date.now());
     await new Promise((resolve) => setTimeout(resolve, waitMs));
+
+    if (options.shutdown?.gracefulRequested) {
+      logger.log("[ai-auto] graceful shutdown requested; stopping before next cycle");
+      return;
+    }
 
     if (getInstructionRevision(config) !== initialInstructionRevision) {
       logger.log("[ai-auto] new instructions detected; starting next cycle");
@@ -264,21 +318,38 @@ async function sleepUntilNextCycle(config, sleepMs, logger) {
   }
 }
 
-export async function runLoop(config, logger = console) {
+export async function runLoop(config, logger = console, options = {}) {
   const startedAt = Date.now();
   const deadline = startedAt + config.maxRuntimeMs;
   let cycleNumber = 0;
 
-  while (Date.now() < deadline) {
+  while (
+    Date.now() < deadline &&
+    !options.shutdown?.gracefulRequested &&
+    !isForceShutdown(options)
+  ) {
     cycleNumber += 1;
     logger.log(`[ai-auto] starting cycle ${cycleNumber}`);
-    const result = await runCycle(config, logger);
+    let result;
+    try {
+      result = await runCycle(config, logger, options);
+    } catch (error) {
+      if (isForceShutdown(options) || isAbortError(error)) {
+        logger.log("[ai-auto] forced shutdown interrupted the active cycle");
+        break;
+      }
+      throw error;
+    }
     logger.log(`[ai-auto] cycle ${cycleNumber}: ${result.outcome}`);
     logger.log(`[ai-auto] log: ${result.logPath}`);
     try {
       await sendTelegramCycleReport(config, result);
     } catch (error) {
       logger.error(`[ai-auto] Telegram report failed: ${error.message}`);
+    }
+
+    if (options.shutdown?.gracefulRequested || result.outcome === "force_shutdown") {
+      break;
     }
 
     const remaining = deadline - Date.now();
@@ -288,7 +359,7 @@ export async function runLoop(config, logger = console) {
 
     const sleepMs = Math.min(config.cycleIntervalMs, remaining);
     logger.log(`[ai-auto] sleeping ${Math.round(sleepMs / 1000)}s`);
-    await sleepUntilNextCycle(config, sleepMs, logger);
+    await sleepUntilNextCycle(config, sleepMs, logger, options);
   }
 
   logger.log("[ai-auto] run window complete");
