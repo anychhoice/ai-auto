@@ -104,7 +104,7 @@ async function readPipedStdin() {
   return input;
 }
 
-function startInteractiveInstructionInput(config) {
+function startInteractiveInstructionInput(config, shutdown) {
   if (!process.stdin.isTTY) {
     return null;
   }
@@ -150,6 +150,10 @@ function startInteractiveInstructionInput(config) {
     }
 
     rl.prompt();
+  });
+
+  rl.on("SIGINT", () => {
+    shutdown?.request("SIGINT");
   });
 
   return rl;
@@ -236,7 +240,7 @@ async function main() {
   if (command === "run") {
     const shutdown = createShutdownController();
     const runState = prepareRunSession(config);
-    const instructionInput = startInteractiveInstructionInput(config);
+    const instructionInput = startInteractiveInstructionInput(config, shutdown);
     const telegramCommands = startEmbeddedTelegramCommands(config);
     try {
       await runLoop(config, console, { shutdown, runState });

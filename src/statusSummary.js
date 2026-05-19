@@ -115,52 +115,69 @@ export function collectStatusSummaryInput(config, root = process.cwd()) {
   };
 }
 
-export async function summarizeInKorean(summaryInput, model) {
+export async function summarizeInKorean(summaryInput, model, options = {}) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY가 필요합니다.");
   }
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model,
-      input: [
-        {
-          role: "system",
-          content: [
-            {
-              type: "input_text",
-              text:
-                "너는 ai-auto 실행 결과를 한국어로 요약한다. 사용자는 최신 cycle 하나가 아니라 이번 실행 동안 누적된 최종 변경사항 전체가 궁금하다. 영어 원문을 번역하지 말고 의미만 자연스럽게 묶어서 5줄 이내로 요약해라. 실패/미완료가 있으면 마지막 줄에 짧게 말해라."
-            }
-          ]
-        },
-        {
-          role: "user",
-          content: [{ type: "input_text", text: JSON.stringify(summaryInput, null, 2) }]
-        }
-      ]
-    })
-  });
+  const controller = new AbortController();
+  const timeoutMs = options.timeoutMs || 120_000;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const abortFromOptions = () => controller.abort();
+  options.signal?.addEventListener("abort", abortFromOptions, { once: true });
 
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload.error?.message || response.statusText);
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        input: [
+          {
+            role: "system",
+            content: [
+              {
+                type: "input_text",
+                text:
+                  "너는 ai-auto 실행 결과를 한국어로 요약한다. 사용자는 최신 cycle 하나가 아니라 이번 실행 동안 누적된 최종 변경사항 전체가 궁금하다. 영어 원문을 번역하지 말고 의미만 자연스럽게 묶어서 5줄 이내로 요약해라. 실패/미완료가 있으면 마지막 줄에 짧게 말해라."
+              }
+            ]
+          },
+          {
+            role: "user",
+            content: [{ type: "input_text", text: JSON.stringify(summaryInput, null, 2) }]
+          }
+        ]
+      }),
+      signal: controller.signal
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error?.message || response.statusText);
+    }
+
+    if (payload.output_text) {
+      return payload.output_text.trim();
+    }
+
+    return (payload.output || [])
+      .flatMap((item) => item.content || [])
+      .map((content) => content.text || "")
+      .join("\n")
+      .trim();
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`OpenAI 요약 요청이 ${Math.round(timeoutMs / 1000)}초 안에 끝나지 않았습니다.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", abortFromOptions);
   }
-
-  if (payload.output_text) {
-    return payload.output_text.trim();
-  }
-
-  return (payload.output || [])
-    .flatMap((item) => item.content || [])
-    .map((content) => content.text || "")
-    .join("\n")
-    .trim();
 }
 
 export function formatStatusSummary(status, koreanSummary) {
@@ -192,8 +209,8 @@ export function formatStatusSummary(status, koreanSummary) {
   return lines.filter((line) => line !== undefined).join("\n");
 }
 
-export async function buildWhatNowSummary(config, root = process.cwd()) {
+export async function buildWhatNowSummary(config, root = process.cwd(), options = {}) {
   const status = collectStatusSummaryInput(config, root);
-  const koreanSummary = await summarizeInKorean(status.summaryInput, config.model || "gpt-5.5");
+  const koreanSummary = await summarizeInKorean(status.summaryInput, config.model || "gpt-5.5", options);
   return formatStatusSummary(status, koreanSummary);
 }

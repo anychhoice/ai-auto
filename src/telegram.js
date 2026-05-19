@@ -5,6 +5,7 @@ import { buildWhatNowSummary } from "./statusSummary.js";
 
 const TELEGRAM_API = "https://api.telegram.org";
 const MAX_MESSAGE_LENGTH = 3900;
+const MAX_REPORT_FIELD_LENGTH = 900;
 
 function getTelegramToken(config) {
   return config.telegram?.botToken || process.env[config.telegram?.botTokenEnv || "TELEGRAM_BOT_TOKEN"];
@@ -20,6 +21,25 @@ function splitMessage(text) {
     chunks.push(text.slice(index, index + MAX_MESSAGE_LENGTH));
   }
   return chunks.length ? chunks : [text];
+}
+
+function truncate(value, maxChars = MAX_REPORT_FIELD_LENGTH) {
+  const text = String(value || "").trim();
+  if (text.length <= maxChars) {
+    return text;
+  }
+  return `${text.slice(0, maxChars - 20)} ...[줄임]`;
+}
+
+function readJsonIfExists(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 async function telegramRequest(config, method, body) {
@@ -71,16 +91,85 @@ export async function sendTelegramCycleReport(config, result) {
     return;
   }
 
-  const message = [
+  await sendTelegramMessage(config, formatTelegramCycleReport(result));
+}
+
+function formatCommandStatus(commandResult) {
+  const status =
+    commandResult.exitCode === 0 && !commandResult.timedOut && !commandResult.aborted
+      ? "OK"
+      : "FAIL";
+  return `${status} ${commandResult.command}`;
+}
+
+function formatVerificationSummary(log) {
+  const latest = Array.isArray(log?.verification) ? log.verification.at(-1) : null;
+  if (!latest?.length) {
+    return "검증 기록 없음";
+  }
+  return latest.map(formatCommandStatus).join("\n");
+}
+
+function formatCodexSummary(log) {
+  const latest = Array.isArray(log?.codex) ? log.codex.at(-1) : null;
+  const output = `${latest?.stdout || ""}\n${latest?.stderr || ""}`.trim();
+  if (!output) {
+    return "Codex 결과 기록 없음";
+  }
+  return truncate(output);
+}
+
+function formatCommitSummary(log) {
+  const commitResults = Array.isArray(log?.commit) ? log.commit : [];
+  if (!commitResults.length) {
+    return "커밋 없음";
+  }
+
+  const commit = commitResults.at(-1);
+  const output = `${commit?.stdout || ""}${commit?.stderr || ""}`.trim();
+  if (commit?.exitCode === 0 && output) {
+    return truncate(output, 500);
+  }
+  if (commit?.exitCode === 0) {
+    return "커밋 완료";
+  }
+  return truncate(`커밋 실패: ${output || commit?.command || "unknown"}`, 500);
+}
+
+export function formatTelegramCycleReport(result) {
+  const log = readJsonIfExists(result.logPath);
+  const plan = log?.plan || result.plan || {};
+  const summary = plan.cycleSummary || plan.codexPrompt || "";
+  const lines = [
     "ai-auto cycle 종료",
     "",
     `결과: ${result.outcome}`,
+    "",
+    "무엇을 했나",
+    truncate(summary || "cycle 요약 없음"),
+    "",
+    "Codex 결과",
+    formatCodexSummary(log),
+    "",
+    "검증",
+    truncate(formatVerificationSummary(log), 700),
+    "",
+    "커밋",
+    formatCommitSummary(log)
+  ];
+
+  if (log?.failureSummary) {
+    lines.push("", "실패/미완료", truncate(log.failureSummary, 700));
+  }
+
+  lines.push(
+    "",
     `로그: ${result.logPath}`,
     "",
     "자세한 누적 요약은 Telegram에서 /whatnow 를 보내거나 로컬에서 ./scripts/what-now.js 를 실행하세요."
-  ].join("\n");
+  );
 
-  await sendTelegramMessage(config, message);
+  return lines.join("\n");
 }
 
 function stateFilePath(config) {
@@ -93,8 +182,12 @@ function readOffset(config) {
   if (!fs.existsSync(filePath)) {
     return 0;
   }
-  const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
-  return Number(parsed.offset || 0);
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    return Number(parsed.offset || 0);
+  } catch {
+    return 0;
+  }
 }
 
 function writeOffset(config, offset) {
@@ -139,6 +232,20 @@ async function getUpdates(config, offset, signal) {
   return payload.result || [];
 }
 
+function sleep(ms, signal) {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timeout);
+        resolve();
+      },
+      { once: true }
+    );
+  });
+}
+
 async function handleTelegramCommand(config, update) {
   const message = update.message;
   const text = message?.text?.trim() || "";
@@ -155,7 +262,8 @@ async function handleTelegramCommand(config, update) {
 
   if (command === "whatnow") {
     try {
-      const summary = await buildWhatNowSummary(config);
+      await sendTelegramMessage(config, "요약 생성 중입니다...", chatId);
+      const summary = await buildWhatNowSummary(config, process.cwd(), { timeoutMs: 120_000 });
       await sendTelegramMessage(config, summary, chatId);
     } catch (error) {
       await sendTelegramMessage(config, `요약 실패: ${error.message}`, chatId);
@@ -225,6 +333,7 @@ export async function runTelegramCommandLoop(config, logger = console, options =
   }
 
   let offset = readOffset(config);
+  let retryDelayMs = 1_000;
   logger.log("[ai-auto] Telegram command loop started. Send /whatnow or /instruct to the bot.");
 
   while (!signal?.aborted) {
@@ -235,8 +344,12 @@ export async function runTelegramCommandLoop(config, logger = console, options =
       if (signal?.aborted || isAbortError(error)) {
         return;
       }
-      throw error;
+      logger.error(`[ai-auto] Telegram polling failed: ${error.message}. Retrying in ${Math.round(retryDelayMs / 1000)}s.`);
+      await sleep(retryDelayMs, signal);
+      retryDelayMs = Math.min(retryDelayMs * 2, 60_000);
+      continue;
     }
+    retryDelayMs = 1_000;
 
     for (const update of updates) {
       offset = Math.max(offset, update.update_id + 1);

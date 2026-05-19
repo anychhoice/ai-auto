@@ -17,7 +17,7 @@ export function createShutdownController(logger = console, options = {}) {
       gracefulRequested = true;
       logWarning(
         logger,
-        `[ai-auto] graceful shutdown requested (${source}). Finishing the current cycle, then stopping. Press Ctrl+C again to force active child processes to stop.`
+        `[ai-auto] safe shutdown requested (${source}). The runner will finish the current cycle, or stop now if it is between cycles. Press Ctrl+C again only if you need to force active child processes to stop.`
       );
       return "graceful";
     }

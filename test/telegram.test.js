@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import {
+  formatTelegramCycleReport,
   parseTelegramCommand,
   telegramCommandsEnabled,
   telegramReportsEnabled
@@ -29,4 +33,35 @@ test("parseTelegramCommand supports bot suffix and multiline args", () => {
     args: "first line\nsecond line"
   });
   assert.deepEqual(parseTelegramCommand("plain text"), { command: "", args: "" });
+});
+
+test("formatTelegramCycleReport reads cycle log details", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-auto-telegram-"));
+  const logPath = path.join(dir, "cycle.json");
+  fs.writeFileSync(
+    logPath,
+    `${JSON.stringify(
+      {
+        outcome: "verified",
+        plan: { cycleSummary: "Add a regression test for MusicXML conversion." },
+        codex: [{ stdout: "Implemented MusicXML conversion regression coverage.", stderr: "" }],
+        verification: [[{ command: "npm test", exitCode: 0, timedOut: false }]],
+        commit: [
+          { command: "git add -A", exitCode: 0, stdout: "", stderr: "" },
+          { command: "git commit -m test", exitCode: 0, stdout: "[main abc1234] Add test\n", stderr: "" }
+        ]
+      },
+      null,
+      2
+    )}\n`
+  );
+
+  const report = formatTelegramCycleReport({ outcome: "verified", logPath });
+
+  assert.match(report, /무엇을 했나/);
+  assert.match(report, /Add a regression test/);
+  assert.match(report, /Codex 결과/);
+  assert.match(report, /Implemented MusicXML/);
+  assert.match(report, /OK npm test/);
+  assert.match(report, /\[main abc1234\] Add test/);
 });
