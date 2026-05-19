@@ -43,6 +43,10 @@ export function telegramReportsEnabled(config) {
   return Boolean(config.telegram?.enabled && getTelegramToken(config) && getDefaultChatId(config));
 }
 
+export function telegramCommandsEnabled(config) {
+  return Boolean(config.telegram?.enabled && config.telegram?.commands?.enabled);
+}
+
 export async function sendTelegramMessage(config, text, chatId = getDefaultChatId(config)) {
   if (!chatId) {
     throw new Error("Telegram chat id is not configured.");
@@ -104,7 +108,7 @@ function allowedChatIds(config) {
   return new Set([...explicit, defaultChatId].filter(Boolean).map(String));
 }
 
-async function getUpdates(config, offset) {
+async function getUpdates(config, offset, signal) {
   const token = getTelegramToken(config);
   if (!token) {
     throw new Error("Telegram bot token is not configured.");
@@ -115,7 +119,7 @@ async function getUpdates(config, offset) {
     offset: String(offset),
     allowed_updates: JSON.stringify(["message"])
   });
-  const response = await fetch(`${TELEGRAM_API}/bot${token}/getUpdates?${params}`);
+  const response = await fetch(`${TELEGRAM_API}/bot${token}/getUpdates?${params}`, { signal });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.ok === false) {
     throw new Error(payload.description || response.statusText);
@@ -150,16 +154,34 @@ async function handleTelegramCommand(config, update) {
   }
 }
 
-export async function runTelegramCommandLoop(config, logger = console) {
-  if (!config.telegram?.enabled || !config.telegram?.commands?.enabled) {
+function isAbortError(error) {
+  return error?.name === "AbortError";
+}
+
+export async function runTelegramCommandLoop(config, logger = console, options = {}) {
+  if (!telegramCommandsEnabled(config)) {
     throw new Error("Telegram commands are disabled. Set telegram.enabled and telegram.commands.enabled to true.");
+  }
+
+  const signal = options.signal;
+  if (signal?.aborted) {
+    return;
   }
 
   let offset = readOffset(config);
   logger.log("[ai-auto] Telegram command loop started. Send /whatnow to the bot.");
 
-  while (true) {
-    const updates = await getUpdates(config, offset);
+  while (!signal?.aborted) {
+    let updates;
+    try {
+      updates = await getUpdates(config, offset, signal);
+    } catch (error) {
+      if (signal?.aborted || isAbortError(error)) {
+        return;
+      }
+      throw error;
+    }
+
     for (const update of updates) {
       offset = Math.max(offset, update.update_id + 1);
       writeOffset(config, offset);

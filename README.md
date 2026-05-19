@@ -290,7 +290,7 @@ TELEGRAM_CHAT_ID=123456789
 
 이렇게 하면 `npm run run`이 각 cycle을 끝낼 때 텔레그램으로 짧은 결과를 보냅니다.
 
-텔레그램에서 `/whatnow`를 호출하려면 command polling을 별도 프로세스로 켭니다.
+텔레그램에서 `/whatnow`를 호출하려면 command polling도 켭니다.
 
 ```json
 {
@@ -304,10 +304,10 @@ TELEGRAM_CHAT_ID=123456789
 }
 ```
 
-그리고 다른 터미널에서 실행합니다.
+이제 `npm run run` 하나를 실행하면 runner cycle과 Telegram command polling이 같은 프로세스 안에서 함께 동작합니다.
 
 ```bash
-npm run telegram
+npm run run
 ```
 
 이후 봇에게 다음 메시지를 보내면 현재 누적 실행 결과를 한글로 답장합니다.
@@ -317,6 +317,8 @@ npm run telegram
 ```
 
 `allowedChatIds`가 비어 있으면 `TELEGRAM_CHAT_ID` 또는 `telegram.chatId`만 허용됩니다. 여러 채팅에서 쓰려면 허용할 chat id를 배열에 넣습니다.
+
+`npm run telegram`은 runner 없이 Telegram 명령만 따로 받을 때 쓰는 standalone 명령입니다. 보통은 `npm run run` 하나만 켜면 됩니다.
 
 ## 주요 설정
 
@@ -697,13 +699,13 @@ npm run once
 npm run run
 ```
 
-설정된 시간 동안 반복 실행합니다. 기본 예시는 24시간입니다.
+설정된 시간 동안 반복 실행합니다. 기본 예시는 24시간입니다. `telegram.commands.enabled`가 true이면 같은 프로세스에서 Telegram `/whatnow` 명령도 함께 받습니다.
 
 ```bash
 npm run telegram
 ```
 
-Telegram `/whatnow` 명령을 long polling으로 받습니다.
+runner 없이 Telegram `/whatnow` 명령만 standalone long polling으로 받습니다.
 
 ```bash
 npm run what-now

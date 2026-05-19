@@ -6,6 +6,7 @@ import { loadConfig, loadDotEnv } from "./config.js";
 import { appendInstruction, clearInstructions, readInstructions } from "./instructions.js";
 import { runCycle, runLoop } from "./orchestrator.js";
 import { runCommand } from "./shell.js";
+import { runTelegramCommandLoop, telegramCommandsEnabled } from "./telegram.js";
 
 function parseArgs(argv) {
   const args = [...argv];
@@ -152,6 +153,28 @@ function startInteractiveInstructionInput(config) {
   return rl;
 }
 
+function startEmbeddedTelegramCommands(config, logger = console) {
+  if (!telegramCommandsEnabled(config)) {
+    return { stop: async () => {} };
+  }
+
+  const controller = new AbortController();
+  const loop = runTelegramCommandLoop(config, logger, { signal: controller.signal }).catch(
+    (error) => {
+      if (!controller.signal.aborted) {
+        logger.error(`[ai-auto] Telegram command loop stopped: ${error.message}`);
+      }
+    }
+  );
+
+  return {
+    stop: async () => {
+      controller.abort();
+      await loop;
+    }
+  };
+}
+
 async function main() {
   loadDotEnv();
   const { command, options } = parseArgs(process.argv.slice(2));
@@ -205,9 +228,11 @@ async function main() {
 
   if (command === "run") {
     const instructionInput = startInteractiveInstructionInput(config);
+    const telegramCommands = startEmbeddedTelegramCommands(config);
     try {
       await runLoop(config);
     } finally {
+      await telegramCommands.stop();
       instructionInput?.close();
     }
     return;
