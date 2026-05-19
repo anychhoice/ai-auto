@@ -4,6 +4,14 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 const ROOT = process.cwd();
+const MAX_FIELD_CHARS = 900;
+
+function truncate(value, maxChars = MAX_FIELD_CHARS) {
+  if (!value || value.length <= maxChars) {
+    return value || "";
+  }
+  return `${value.slice(0, maxChars - 20)} ...[줄임]`;
+}
 
 function loadDotEnv(envPath = path.join(ROOT, ".env")) {
   if (!fs.existsSync(envPath)) {
@@ -50,28 +58,56 @@ function run(command, args, cwd) {
   };
 }
 
-function findLatestCycleLog(logDir) {
+function findCycleLogs(logDir) {
   if (!fs.existsSync(logDir)) {
-    return null;
+    return [];
   }
 
-  const files = fs
+  return fs
     .readdirSync(logDir)
     .filter((file) => file.endsWith("-cycle.json"))
     .map((file) => path.join(logDir, file))
-    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-
-  return files[0] || null;
+    .sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs);
 }
 
-function collectSummaryInput({ latestLog, gitStatus, recentCommits }) {
+function compactCycleLog(filePath) {
+  const log = readJsonIfExists(filePath);
+  if (!log) {
+    return null;
+  }
+
+  const commitOutput = (log.commit || [])
+    .map((result) => result.stdout || result.stderr || "")
+    .join("\n")
+    .trim();
+
   return {
-    cycleOutcome: latestLog?.outcome || "no-log",
-    cycleSummary: latestLog?.plan?.cycleSummary || "",
-    testIntent: latestLog?.plan?.testIntent || null,
-    failureSummary: latestLog?.failureSummary || "",
+    file: path.basename(filePath),
+    startedAt: log.startedAt || "",
+    finishedAt: log.finishedAt || "",
+    outcome: log.outcome || "",
+    summary: truncate(log.plan?.cycleSummary || ""),
+    testIntent: log.plan?.testIntent || null,
+    commit: truncate(commitOutput),
+    failure: truncate(log.failureSummary || "", 500),
+    changed: Boolean(commitOutput)
+  };
+}
+
+function collectSummaryInput({ cycleLogs, gitStatus, commitsDuringRun }) {
+  const cycles = cycleLogs.map(compactCycleLog).filter(Boolean);
+  const latest = cycles.at(-1) || null;
+
+  return {
+    cycleCount: cycles.length,
+    range: {
+      startedAt: cycles[0]?.startedAt || "",
+      finishedAt: latest?.finishedAt || ""
+    },
+    latestOutcome: latest?.outcome || "no-log",
+    cycles,
     changedFiles: gitStatus.stdout || "변경 없음",
-    recentCommits: recentCommits.stdout || "커밋 없음"
+    commitsDuringRun: commitsDuringRun.stdout || "커밋 없음"
   };
 }
 
@@ -95,7 +131,7 @@ async function summarizeInKorean(summaryInput, model) {
             {
               type: "input_text",
               text:
-                "너는 ai-auto 실행 결과를 한국어로 아주 짧게 요약한다. 사용자는 최종 변경사항만 궁금해한다. 3줄 이내로, 영어 원문을 번역하지 말고 의미만 자연스럽게 요약해라."
+                "너는 ai-auto 실행 결과를 한국어로 요약한다. 사용자는 최신 cycle 하나가 아니라 이번 실행 동안 누적된 최종 변경사항 전체가 궁금하다. 영어 원문을 번역하지 말고 의미만 자연스럽게 묶어서 5줄 이내로 요약해라. 실패/미완료가 있으면 마지막 줄에 짧게 말해라."
             }
           ]
         },
@@ -138,12 +174,15 @@ async function main() {
   const config = readJsonIfExists(configPath) || readJsonIfExists(exampleConfigPath) || {};
   const workspace = fs.realpathSync(resolveFrom(ROOT, config.workspace, "."));
   const logDir = resolveFrom(workspace, config.logDir, ".ai-auto");
-  const latestLogPath = findLatestCycleLog(logDir);
-  const latestLog = latestLogPath ? readJsonIfExists(latestLogPath) : null;
+  const cycleLogs = findCycleLogs(logDir);
+  const compactCycles = cycleLogs.map(compactCycleLog).filter(Boolean);
+  const firstCycleStartedAt = compactCycles[0]?.startedAt;
   const gitStatus = run("git", ["status", "--short"], workspace);
   const branch = run("git", ["branch", "--show-current"], workspace);
-  const recentCommits = run("git", ["log", "--oneline", "-3"], workspace);
-  const summaryInput = collectSummaryInput({ latestLog, gitStatus, recentCommits });
+  const commitsDuringRun = firstCycleStartedAt
+    ? run("git", ["log", "--oneline", "--since", firstCycleStartedAt], workspace)
+    : run("git", ["log", "--oneline", "-5"], workspace);
+  const summaryInput = collectSummaryInput({ cycleLogs, gitStatus, commitsDuringRun });
   const koreanSummary = await summarizeInKorean(summaryInput, config.model || "gpt-5.5");
 
   console.log("ai-auto 최종 변경사항");
@@ -152,26 +191,24 @@ async function main() {
   console.log(`브랜치: ${branch.stdout || "확인 불가"}`);
   console.log("");
 
-  if (latestLog) {
-    console.log(`최근 cycle 결과: ${latestLog.outcome || "알 수 없음"}`);
-    console.log(`최근 cycle 종료: ${latestLog.finishedAt || "진행 중이거나 기록 없음"}`);
+  if (compactCycles.length) {
+    console.log(
+      `요약 대상: ${compactCycles.length}개 cycle (${compactCycles[0].startedAt || "시작 알 수 없음"} ~ ${compactCycles.at(-1).finishedAt || "진행 중"})`
+    );
     if (koreanSummary) {
       console.log("");
       console.log(koreanSummary);
     }
-    if (latestLog.failureSummary) {
-      console.log(`최근 실패: ${latestLog.failureSummary.split(/\r?\n/)[0].slice(0, 180)}`);
-    }
   } else {
-    console.log("최근 cycle 결과: 아직 로그가 없습니다.");
+    console.log("요약 대상: 아직 cycle 로그가 없습니다.");
   }
 
   console.log("");
   console.log("Git 변경 파일");
   console.log(gitStatus.stdout || "변경 없음");
   console.log("");
-  console.log("최근 커밋");
-  console.log(commitHashesOnly(recentCommits.stdout) || "커밋 없음");
+  console.log("이번 실행 커밋");
+  console.log(commitHashesOnly(commitsDuringRun.stdout) || "커밋 없음");
 }
 
 main().catch((error) => {
