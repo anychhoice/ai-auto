@@ -102,7 +102,10 @@ function isAbortError(error) {
 
 export async function runCycle(config, logger = console, options = {}) {
   const forceSignal = getForceSignal(options);
-  const context = await getWorkspaceContext(config, { signal: forceSignal });
+  const context = await getWorkspaceContext(config, {
+    signal: forceSignal,
+    runState: options.runState || null
+  });
   logger.log("[ai-auto] consulting Codex in read-only mode");
   context.codexConsultation = await consultCodex(config, context, { signal: forceSignal });
   logger.log(

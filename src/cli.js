@@ -5,6 +5,7 @@ import readline from "node:readline";
 import { loadConfig, loadDotEnv } from "./config.js";
 import { appendInstruction, clearInstructions, readInstructions } from "./instructions.js";
 import { runCycle, runLoop } from "./orchestrator.js";
+import { prepareRunSession } from "./runState.js";
 import { runCommand } from "./shell.js";
 import { createShutdownController } from "./shutdown.js";
 import { runTelegramCommandLoop, telegramCommandsEnabled } from "./telegram.js";
@@ -234,10 +235,11 @@ async function main() {
 
   if (command === "run") {
     const shutdown = createShutdownController();
+    const runState = prepareRunSession(config);
     const instructionInput = startInteractiveInstructionInput(config);
     const telegramCommands = startEmbeddedTelegramCommands(config);
     try {
-      await runLoop(config, console, { shutdown });
+      await runLoop(config, console, { shutdown, runState });
     } finally {
       await telegramCommands.stop();
       instructionInput?.close();

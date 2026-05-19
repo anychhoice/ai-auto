@@ -31,6 +31,8 @@ export async function getWorkspaceContext(config, options = {}) {
   return {
     workspace: config.workspace,
     mission: config.mission,
+    operatorInstruction: config.operatorInstruction || "",
+    runState: options.runState || null,
     sessionInstructions: readInstructions(config),
     detectedCommands: config.commandDiscovery.enabled
       ? detectProjectCommands(config.workspace)

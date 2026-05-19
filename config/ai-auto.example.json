@@ -8,7 +8,13 @@
   "discussionRounds": 2,
   "logDir": ".ai-auto",
   "instructionFile": ".ai-auto/instructions.md",
+  "operatorInstruction": "",
   "autoCommit": false,
+  "restart": {
+    "cleanCycleLogs": true,
+    "archiveCycleLogs": true,
+    "stateFile": ".ai-auto/run-state.json"
+  },
   "allowPlannerCommandOverride": false,
   "commandDiscovery": {
     "enabled": true,

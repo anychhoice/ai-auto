@@ -228,6 +228,14 @@ npm run run
 - 5초 안에 종료되지 않으면 `SIGKILL`로 한 번 더 끊습니다.
 - 이 경우 작업 중이던 workspace가 dirty 상태로 남을 수 있으니, 종료 후 `git status`로 확인하는 편이 좋습니다.
 
+## 재시작과 이어서 작업하기
+
+`npm run run`을 새로 시작하면 이전 실행의 active cycle 로그(`.ai-auto/*-cycle.json`)를 비웁니다. 기본값에서는 삭제 대신 `.ai-auto/archive/<timestamp>/`로 옮기기 때문에, 새 실행의 `/whatnow` 요약은 이번 실행 로그만 보게 됩니다.
+
+이전 실행의 마지막 cycle 로그에 남은 자동 커밋이 현재 Git `HEAD`와 같으면, runner는 그 커밋을 이미 완료된 기준점으로 기록하고 다음 cycle을 이어서 계획합니다.
+
+단, `config/ai-auto.json`의 `mission` 또는 `operatorInstruction`에 사용자가 새 지시를 넣은 것이 감지되면 그 지시가 이어가기 정보보다 우선합니다.
+
 ## 실행 중 자연어로 지시하기
 
 `npm run run`으로 장시간 루프가 도는 중에도 자연어 지시를 추가할 수 있습니다.
@@ -583,6 +591,36 @@ git add -A
 git commit -m "..."
 ```
 
+### operatorInstruction
+
+```json
+{
+  "operatorInstruction": "이번 실행에서는 MusicXML 변환 오류를 먼저 고쳐라."
+}
+```
+
+`mission`보다 더 즉시적인 사용자 지시를 넣는 필드입니다. 값이 비어 있지 않으면 계획 단계에서 direct operator instruction으로 전달됩니다.
+
+재시작할 때 이전 실행의 값과 달라졌다면 새 지시로 감지하고, 이전 로그나 이어가기 커밋보다 우선합니다.
+
+### restart
+
+```json
+{
+  "restart": {
+    "cleanCycleLogs": true,
+    "archiveCycleLogs": true,
+    "stateFile": ".ai-auto/run-state.json"
+  }
+}
+```
+
+`npm run run`을 새로 시작할 때의 정리 방식입니다.
+
+- `cleanCycleLogs`: 이전 active cycle 로그를 새 실행 시작 전에 비울지 여부
+- `archiveCycleLogs`: 비운 로그를 삭제하지 않고 archive 폴더로 옮길지 여부
+- `stateFile`: 이어가기 기준점과 config 지시 변경 여부를 저장하는 파일
+
 ### deploy
 
 ```json
@@ -661,6 +699,8 @@ Telegram 연동 설정입니다.
 ```
 
 AI에게 주는 장기 목표입니다.
+
+짧은 기간만 적용할 새 지시는 `operatorInstruction`에 넣는 편이 더 명확합니다.
 
 기본 mission은 처음부터 코드를 크게 바꾸라는 지시가 아닙니다. 먼저 대상 프로젝트를 파악하고, 구조와 테스트와 위험 지점을 살펴본 뒤, 작고 검증 가능한 개선점을 하나 선택하도록 되어 있습니다.
 

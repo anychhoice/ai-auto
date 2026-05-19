@@ -16,6 +16,8 @@ export function buildCodexConsultationPrompt(config, context, openAiQuestion) {
     "Answer the OpenAI planner's question below.",
     "",
     "Do not edit files. Do not install packages. Do not run destructive commands. Prefer reading files and project metadata.",
+    "If Current orchestration context includes newConfigInstruction, treat it as the operator's highest-priority direction when recommending next work.",
+    "If resumedFromCommit is present, treat that commit as already completed and focus on current config instructions plus any uncommitted git status.",
     "",
     "OpenAI planner question:",
     openAiQuestion,
@@ -32,6 +34,9 @@ export function buildCodexConsultationPrompt(config, context, openAiQuestion) {
     JSON.stringify(
       {
         mission: context.mission,
+        operatorInstruction: context.operatorInstruction,
+        newConfigInstruction: context.runState?.newConfigInstruction || null,
+        resumedFromCommit: context.runState?.resumedFromCommit || null,
         sessionInstructions: context.sessionInstructions,
         detectedCommands: context.detectedCommands,
         trackedFiles: context.trackedFiles,
