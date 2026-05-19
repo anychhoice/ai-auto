@@ -42,5 +42,18 @@
     "command": "",
     "requireCleanGit": true
   },
+  "telegram": {
+    "enabled": false,
+    "botTokenEnv": "TELEGRAM_BOT_TOKEN",
+    "chatIdEnv": "TELEGRAM_CHAT_ID",
+    "chatId": "",
+    "reportCycles": true,
+    "commands": {
+      "enabled": false,
+      "allowedChatIds": [],
+      "pollTimeoutSeconds": 25,
+      "stateFile": ".ai-auto/telegram-offset.json"
+    }
+  },
   "mission": "Actively improve the target project every cycle. First understand the architecture, tests, risks, and improvement opportunities, then make one concrete, small, tested, reviewable code or test change. Avoid no-op analysis cycles unless the workspace is already cleanly complete or a safety concern blocks changes. Never change secrets, credentials, or deployment configuration unless explicitly requested."
 }

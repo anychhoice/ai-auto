@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 import { loadConfig, loadDotEnv } from "../src/config.js";
-import { buildWhatNowSummary } from "../src/statusSummary.js";
+import { runTelegramCommandLoop } from "../src/telegram.js";
 
 async function main() {
   loadDotEnv();
   const config = loadConfig();
-  console.log(await buildWhatNowSummary(config));
+  await runTelegramCommandLoop(config);
 }
 
 main().catch((error) => {
-  console.error(`요약 실패: ${error.message}`);
+  console.error(error.stack || error.message);
   process.exitCode = 1;
 });

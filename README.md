@@ -263,6 +263,61 @@ npm run clear-instructions
 
 주의할 점이 하나 있습니다. 이미 실행 중인 `codex exec` 프로세스 내부에 실시간으로 메시지를 꽂아 넣는 것은 아닙니다. 대신 현재 Codex 작업이 끝난 뒤 다음 계획, 다음 수정 시도, 다음 cycle에 자연스럽게 반영됩니다.
 
+## 텔레그램 보고와 `/whatnow`
+
+Telegram Bot API를 사용해서 cycle 종료 결과를 텔레그램으로 받을 수 있습니다. 기본값은 꺼져 있습니다.
+
+`.env`에 봇 토큰과 채팅 ID를 넣습니다.
+
+```bash
+TELEGRAM_BOT_TOKEN=123456:your-bot-token
+TELEGRAM_CHAT_ID=123456789
+```
+
+`config/ai-auto.json`에서 텔레그램 보고를 켭니다.
+
+```json
+{
+  "telegram": {
+    "enabled": true,
+    "reportCycles": true,
+    "commands": {
+      "enabled": false
+    }
+  }
+}
+```
+
+이렇게 하면 `npm run run`이 각 cycle을 끝낼 때 텔레그램으로 짧은 결과를 보냅니다.
+
+텔레그램에서 `/whatnow`를 호출하려면 command polling을 별도 프로세스로 켭니다.
+
+```json
+{
+  "telegram": {
+    "enabled": true,
+    "commands": {
+      "enabled": true,
+      "allowedChatIds": []
+    }
+  }
+}
+```
+
+그리고 다른 터미널에서 실행합니다.
+
+```bash
+npm run telegram
+```
+
+이후 봇에게 다음 메시지를 보내면 현재 누적 실행 결과를 한글로 답장합니다.
+
+```text
+/whatnow
+```
+
+`allowedChatIds`가 비어 있으면 `TELEGRAM_CHAT_ID` 또는 `telegram.chatId`만 허용됩니다. 여러 채팅에서 쓰려면 허용할 chat id를 배열에 넣습니다.
+
 ## 주요 설정
 
 설정 파일은 `config/ai-auto.json`입니다. 처음에는 `config/ai-auto.example.json`을 복사해서 만듭니다.
@@ -550,6 +605,37 @@ git commit -m "..."
 
 운영 환경에서는 `requireCleanGit: true`를 유지하는 것을 권장합니다.
 
+### telegram
+
+```json
+{
+  "telegram": {
+    "enabled": false,
+    "botTokenEnv": "TELEGRAM_BOT_TOKEN",
+    "chatIdEnv": "TELEGRAM_CHAT_ID",
+    "chatId": "",
+    "reportCycles": true,
+    "commands": {
+      "enabled": false,
+      "allowedChatIds": [],
+      "pollTimeoutSeconds": 25,
+      "stateFile": ".ai-auto/telegram-offset.json"
+    }
+  }
+}
+```
+
+Telegram 연동 설정입니다.
+
+- `enabled`: 텔레그램 기능 전체 on/off
+- `botTokenEnv`: 봇 토큰을 읽을 환경변수 이름
+- `chatIdEnv`: 기본 chat id를 읽을 환경변수 이름
+- `chatId`: 환경변수 대신 직접 지정할 chat id
+- `reportCycles`: cycle 종료 보고 여부
+- `commands.enabled`: `/whatnow` long polling 사용 여부
+- `commands.allowedChatIds`: 명령을 허용할 chat id 목록
+- `commands.stateFile`: Telegram `getUpdates` offset 저장 파일
+
 ### mission
 
 ```json
@@ -612,6 +698,18 @@ npm run run
 ```
 
 설정된 시간 동안 반복 실행합니다. 기본 예시는 24시간입니다.
+
+```bash
+npm run telegram
+```
+
+Telegram `/whatnow` 명령을 long polling으로 받습니다.
+
+```bash
+npm run what-now
+```
+
+현재 누적 실행 결과를 한글로 요약합니다.
 
 ```bash
 npm run instruct -- "자연어 지시"

@@ -6,6 +6,7 @@ import { detectProjectCommands, resolveVerificationCommands } from "./detectComm
 import { getInstructionRevision, readInstructions } from "./instructions.js";
 import { createCyclePlan } from "./openai.js";
 import { runCommand, runCommandList, summarizeCommandResult } from "./shell.js";
+import { sendTelegramCycleReport } from "./telegram.js";
 import { commitAll, getWorkspaceContext, isGitClean } from "./workspace.js";
 
 function ensureLogDir(logDir) {
@@ -274,6 +275,11 @@ export async function runLoop(config, logger = console) {
     const result = await runCycle(config, logger);
     logger.log(`[ai-auto] cycle ${cycleNumber}: ${result.outcome}`);
     logger.log(`[ai-auto] log: ${result.logPath}`);
+    try {
+      await sendTelegramCycleReport(config, result);
+    } catch (error) {
+      logger.error(`[ai-auto] Telegram report failed: ${error.message}`);
+    }
 
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
