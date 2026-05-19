@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { appendInstruction, clearInstructions, readInstructions } from "./instructions.js";
 import { buildWhatNowSummary } from "./statusSummary.js";
 
 const TELEGRAM_API = "https://api.telegram.org";
@@ -108,6 +109,17 @@ function allowedChatIds(config) {
   return new Set([...explicit, defaultChatId].filter(Boolean).map(String));
 }
 
+export function parseTelegramCommand(text) {
+  const match = text.trim().match(/^\/([a-zA-Z0-9_]+)(?:@[a-zA-Z0-9_]+)?(?:\s+([\s\S]*))?$/);
+  if (!match) {
+    return { command: "", args: "" };
+  }
+  return {
+    command: match[1].toLowerCase(),
+    args: (match[2] || "").trim()
+  };
+}
+
 async function getUpdates(config, offset, signal) {
   const token = getTelegramToken(config);
   if (!token) {
@@ -139,7 +151,9 @@ async function handleTelegramCommand(config, update) {
     return;
   }
 
-  if (text === "/whatnow" || text.startsWith("/whatnow@")) {
+  const { command, args } = parseTelegramCommand(text);
+
+  if (command === "whatnow") {
     try {
       const summary = await buildWhatNowSummary(config);
       await sendTelegramMessage(config, summary, chatId);
@@ -149,8 +163,50 @@ async function handleTelegramCommand(config, update) {
     return;
   }
 
-  if (text === "/help" || text.startsWith("/help@")) {
-    await sendTelegramMessage(config, "사용 가능 명령: /whatnow", chatId);
+  if (command === "instruct") {
+    if (!args) {
+      await sendTelegramMessage(config, "사용법: /instruct 자연어 지시", chatId);
+      return;
+    }
+    const result = appendInstruction(config, args);
+    await sendTelegramMessage(
+      config,
+      ["지시 추가 완료", "", result.text, "", `파일: ${result.filePath}`].join("\n"),
+      chatId
+    );
+    return;
+  }
+
+  if (command === "show") {
+    const instructions = readInstructions(config);
+    await sendTelegramMessage(config, instructions || "활성 지시가 없습니다.", chatId);
+    return;
+  }
+
+  if (command === "clear") {
+    const result = clearInstructions(config);
+    await sendTelegramMessage(
+      config,
+      result.cleared
+        ? `활성 지시를 정리했습니다.\narchive: ${result.archivePath}`
+        : "활성 지시 파일이 없습니다.",
+      chatId
+    );
+    return;
+  }
+
+  if (command === "help" || command === "start") {
+    await sendTelegramMessage(
+      config,
+      [
+        "사용 가능 명령:",
+        "/whatnow - 현재 실행 요약",
+        "/instruct 자연어 지시 - 실행 중인 세션에 지시 추가",
+        "/show - 활성 지시 확인",
+        "/clear - 활성 지시 정리"
+      ].join("\n"),
+      chatId
+    );
   }
 }
 
@@ -169,7 +225,7 @@ export async function runTelegramCommandLoop(config, logger = console, options =
   }
 
   let offset = readOffset(config);
-  logger.log("[ai-auto] Telegram command loop started. Send /whatnow to the bot.");
+  logger.log("[ai-auto] Telegram command loop started. Send /whatnow or /instruct to the bot.");
 
   while (!signal?.aborted) {
     let updates;

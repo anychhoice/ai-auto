@@ -338,6 +338,20 @@ npm run run
 /whatnow
 ```
 
+실행 중인 세션에 원격 지시를 추가하려면 다음처럼 보냅니다.
+
+```text
+/instruct MusicXML 변환 오류를 먼저 고치고, 테스트로 재현해.
+```
+
+Telegram에서 사용할 수 있는 명령은 다음과 같습니다.
+
+- `/whatnow`: 현재 실행 누적 요약
+- `/instruct 자연어 지시`: 실행 중인 세션에 지시 추가
+- `/show`: 현재 활성 지시 확인
+- `/clear`: 활성 지시 정리
+- `/help` 또는 `/start`: 명령 목록 표시
+
 `allowedChatIds`가 비어 있으면 `TELEGRAM_CHAT_ID` 또는 `telegram.chatId`만 허용됩니다. 여러 채팅에서 쓰려면 허용할 chat id를 배열에 넣습니다.
 
 `npm run telegram`은 runner 없이 Telegram 명령만 따로 받을 때 쓰는 standalone 명령입니다. 보통은 `npm run run` 하나만 켜면 됩니다.
@@ -686,7 +700,7 @@ Telegram 연동 설정입니다.
 - `chatIdEnv`: 기본 chat id를 읽을 환경변수 이름
 - `chatId`: 환경변수 대신 직접 지정할 chat id
 - `reportCycles`: cycle 종료 보고 여부
-- `commands.enabled`: `/whatnow` long polling 사용 여부
+- `commands.enabled`: `/whatnow`, `/instruct`, `/show`, `/clear` long polling 사용 여부
 - `commands.allowedChatIds`: 명령을 허용할 chat id 목록
 - `commands.stateFile`: Telegram `getUpdates` offset 저장 파일
 
@@ -753,13 +767,13 @@ npm run once
 npm run run
 ```
 
-설정된 시간 동안 반복 실행합니다. 기본 예시는 24시간입니다. `telegram.commands.enabled`가 true이면 같은 프로세스에서 Telegram `/whatnow` 명령도 함께 받습니다.
+설정된 시간 동안 반복 실행합니다. 기본 예시는 24시간입니다. `telegram.commands.enabled`가 true이면 같은 프로세스에서 Telegram `/whatnow`, `/instruct`, `/show`, `/clear` 명령도 함께 받습니다.
 
 ```bash
 npm run telegram
 ```
 
-runner 없이 Telegram `/whatnow` 명령만 standalone long polling으로 받습니다.
+runner 없이 Telegram 명령만 standalone long polling으로 받습니다.
 
 ```bash
 npm run what-now
