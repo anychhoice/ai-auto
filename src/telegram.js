@@ -36,6 +36,21 @@ function compactLine(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function outcomeLabel(outcome) {
+  const labels = {
+    verified: "완료",
+    no_change_requested: "변경 없음",
+    verification_failed: "검증 실패",
+    test_setup_missing: "테스트 필요",
+    force_shutdown: "강제 종료"
+  };
+  return labels[outcome] || "종료";
+}
+
+function cleanSummary(value) {
+  return compactLine(value).replace(/^Latest operator instruction:\s*/i, "지시: ");
+}
+
 function readJsonIfExists(filePath) {
   if (!filePath || !fs.existsSync(filePath)) {
     return null;
@@ -102,16 +117,16 @@ export async function sendTelegramCycleReport(config, result) {
 function formatVerificationOneLine(log) {
   const latest = Array.isArray(log?.verification) ? log.verification.at(-1) : null;
   if (!latest?.length) {
-    return "검증 없음";
+    return "";
   }
   const failed = latest.find((result) => result.exitCode !== 0 || result.timedOut || result.aborted);
-  return failed ? `검증 실패: ${compactLine(failed.command)}` : `검증 OK ${latest.length}개`;
+  return failed ? `검증 실패: ${truncate(compactLine(failed.command), 80)}` : "검증 통과";
 }
 
 function formatCommitOneLine(log) {
   const commitResults = Array.isArray(log?.commit) ? log.commit : [];
   if (!commitResults.length) {
-    return "커밋 없음";
+    return "";
   }
 
   const commit = commitResults.at(-1);
@@ -126,17 +141,18 @@ function formatCommitOneLine(log) {
 export function formatTelegramCycleReport(result) {
   const log = readJsonIfExists(result.logPath);
   const plan = log?.plan || result.plan || {};
-  const summary = truncate(compactLine(plan.cycleSummary || plan.codexPrompt || "cycle 요약 없음"), 180);
-  const failure = log?.failureSummary ? ` | 실패: ${truncate(compactLine(log.failureSummary), 140)}` : "";
-  const logName = result.logPath ? path.basename(result.logPath) : "로그 없음";
+  const summary = truncate(cleanSummary(plan.cycleSummary || plan.codexPrompt || "cycle 요약 없음"), 100);
+  const failure = log?.failureSummary ? `실패: ${truncate(compactLine(log.failureSummary), 90)}` : "";
+  const instructionsCleared = log?.instructionsCleared?.cleared ? "지시 정리" : "";
 
   return [
-    `cycle 종료: ${result.outcome}`,
+    outcomeLabel(result.outcome),
     summary,
     formatVerificationOneLine(log),
     formatCommitOneLine(log),
-    `로그 ${logName}${failure}`
-  ].join(" | ");
+    instructionsCleared,
+    failure
+  ].filter(Boolean).join(" · ");
 }
 
 function stateFilePath(config) {

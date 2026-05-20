@@ -20,6 +20,17 @@ function truncate(value, maxChars = 220) {
   return `${text.slice(0, maxChars - 10)} ...[줄임]`;
 }
 
+function outcomeLabel(outcome) {
+  const labels = {
+    verified: "완료",
+    no_change_requested: "변경 없음",
+    verification_failed: "검증 실패",
+    test_setup_missing: "테스트 필요",
+    force_shutdown: "강제 종료"
+  };
+  return labels[outcome] || outcome;
+}
+
 export function readRunProgress(config) {
   const filePath = progressFilePath(config);
   if (!fs.existsSync(filePath)) {
@@ -57,7 +68,7 @@ export function formatRunProgress(progress) {
   const phase = progress.phaseLabel || progress.phase || "상태 확인 중";
   const detail = truncate(progress.detail || progress.planSummary || "");
   const started = progress.cycleStartedAt || progress.runStartedAt || "";
-  const outcome = progress.outcome ? `결과: ${progress.outcome}` : "";
+  const outcome = progress.outcome ? `결과: ${outcomeLabel(progress.outcome)}` : "";
   const log = progress.logPath ? `로그: ${path.basename(progress.logPath)}` : "";
 
   return [`현재: ${state} | ${cycle} | ${phase}`, detail, started ? `시작: ${started}` : "", outcome, log]

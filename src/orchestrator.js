@@ -3,8 +3,13 @@ import path from "node:path";
 import { consultCodex } from "./consultation.js";
 import { runCodex } from "./codex.js";
 import { detectProjectCommands, resolveVerificationCommands } from "./detectCommands.js";
-import { getInstructionRevision, readInstructions, readLatestInstruction } from "./instructions.js";
-import { createCyclePlan } from "./planner.js";
+import {
+  clearInstructions,
+  getInstructionRevision,
+  readInstructions,
+  readLatestInstruction
+} from "./instructions.js";
+import { createCyclePlan, verifyInstructionFulfillment } from "./planner.js";
 import { writeRunProgress } from "./progress.js";
 import { runCommand, runCommandList, summarizeCommandResult } from "./shell.js";
 import { sendTelegramCycleReport } from "./telegram.js";
@@ -130,6 +135,42 @@ function plannerMode(config) {
   return config.planner?.mode || "codex";
 }
 
+function isSuccessfulCycleOutcome(outcome) {
+  return outcome === "verified" || outcome === "no_change_requested";
+}
+
+export function clearCompletedSessionInstructions(config, cycleLog, logger = console) {
+  if (!isSuccessfulCycleOutcome(cycleLog.outcome)) {
+    return null;
+  }
+  if (!String(cycleLog.sessionInstructionsAtPlan || "").trim()) {
+    return null;
+  }
+  if (!cycleLog.instructionFulfillment?.fulfilled) {
+    return {
+      cleared: false,
+      filePath: config.instructionFile,
+      archivePath: "",
+      skippedReason: "instruction_not_verified_as_fulfilled",
+      reason: cycleLog.instructionFulfillment?.reason || ""
+    };
+  }
+  if (getInstructionRevision(config) !== cycleLog.instructionRevisionAtPlan) {
+    return {
+      cleared: false,
+      filePath: config.instructionFile,
+      archivePath: "",
+      skippedReason: "instructions_changed_during_cycle"
+    };
+  }
+
+  const result = clearInstructions(config);
+  if (result.cleared) {
+    logger.log(`[ai-auto] active instructions completed and archived: ${result.archivePath}`);
+  }
+  return result;
+}
+
 export function prioritizeLatestInstruction(plan, latestSessionInstruction) {
   const instruction = String(latestSessionInstruction || "").trim();
   if (!instruction) {
@@ -174,6 +215,7 @@ export async function runCycle(config, logger = console, options = {}) {
     signal: forceSignal,
     runState: options.runState || null
   });
+  const instructionRevisionAtPlan = getInstructionRevision(config);
   if (plannerMode(config) === "codex") {
     context.codexConsultation = {
       enabled: false,
@@ -241,6 +283,7 @@ export async function runCycle(config, logger = console, options = {}) {
     startedAt: new Date().toISOString(),
     sessionInstructionsAtPlan: context.sessionInstructions,
     latestSessionInstructionAtPlan: context.latestSessionInstruction,
+    instructionRevisionAtPlan,
     codexConsultation: context.codexConsultation,
     planner: planning.planner,
     plan,
@@ -249,7 +292,9 @@ export async function runCycle(config, logger = console, options = {}) {
     codex: [],
     verification: [],
     deploy: null,
-    commit: null
+    commit: null,
+    instructionFulfillment: null,
+    instructionsCleared: null
   };
 
   if (isForceShutdown(options)) {
@@ -268,6 +313,28 @@ export async function runCycle(config, logger = console, options = {}) {
   if (!plan.shouldModify) {
     cycleLog.finishedAt = new Date().toISOString();
     cycleLog.outcome = "no_change_requested";
+    recordProgress(config, logger, {
+      running: true,
+      phase: "instruction_fulfillment",
+      phaseLabel: "지시 이행 검증 중",
+      detail: "planner가 이번 cycle이 활성 지시를 이행했는지 확인하는 중입니다."
+    });
+    cycleLog.instructionFulfillment = await verifyInstructionFulfillment(config, cycleLog, {
+      signal: forceSignal
+    });
+    if (isForceShutdown(options)) {
+      const result = writeForceShutdownLog(config, cycleLog, plan);
+      recordProgress(config, logger, {
+        running: false,
+        phase: "force_shutdown",
+        phaseLabel: "강제 종료됨",
+        detail: "지시 이행 검증 중 운영자가 강제 종료했습니다.",
+        outcome: result.outcome,
+        logPath: result.logPath
+      });
+      return result;
+    }
+    cycleLog.instructionsCleared = clearCompletedSessionInstructions(config, cycleLog, logger);
     const logPath = writeJsonLog(config, "cycle", cycleLog);
     recordProgress(config, logger, {
       running: false,
@@ -277,7 +344,14 @@ export async function runCycle(config, logger = console, options = {}) {
       outcome: cycleLog.outcome,
       logPath
     });
-    return { ok: true, outcome: cycleLog.outcome, logPath, plan };
+    return {
+      ok: true,
+      outcome: cycleLog.outcome,
+      logPath,
+      plan,
+      instructionFulfillment: cycleLog.instructionFulfillment,
+      instructionsCleared: Boolean(cycleLog.instructionsCleared?.cleared)
+    };
   }
 
   let failureSummary = "";
@@ -483,6 +557,28 @@ export async function runCycle(config, logger = console, options = {}) {
 
   cycleLog.finishedAt = new Date().toISOString();
   cycleLog.outcome = "verified";
+  recordProgress(config, logger, {
+    running: true,
+    phase: "instruction_fulfillment",
+    phaseLabel: "지시 이행 검증 중",
+    detail: "planner가 이번 cycle이 활성 지시를 이행했는지 확인하는 중입니다."
+  });
+  cycleLog.instructionFulfillment = await verifyInstructionFulfillment(config, cycleLog, {
+    signal: forceSignal
+  });
+  if (isForceShutdown(options)) {
+    const result = writeForceShutdownLog(config, cycleLog, plan);
+    recordProgress(config, logger, {
+      running: false,
+      phase: "force_shutdown",
+      phaseLabel: "강제 종료됨",
+      detail: "지시 이행 검증 중 운영자가 강제 종료했습니다.",
+      outcome: result.outcome,
+      logPath: result.logPath
+    });
+    return result;
+  }
+  cycleLog.instructionsCleared = clearCompletedSessionInstructions(config, cycleLog, logger);
   const logPath = writeJsonLog(config, "cycle", cycleLog);
   recordProgress(config, logger, {
     running: false,
@@ -492,7 +588,14 @@ export async function runCycle(config, logger = console, options = {}) {
     outcome: cycleLog.outcome,
     logPath
   });
-  return { ok: true, outcome: cycleLog.outcome, logPath, plan };
+  return {
+    ok: true,
+    outcome: cycleLog.outcome,
+    logPath,
+    plan,
+    instructionFulfillment: cycleLog.instructionFulfillment,
+    instructionsCleared: Boolean(cycleLog.instructionsCleared?.cleared)
+  };
 }
 
 async function sleepUntilNextCycle(config, sleepMs, logger, options = {}) {
@@ -570,7 +673,19 @@ export async function runLoop(config, logger = console, options = {}) {
       break;
     }
 
-    if (getInstructionRevision(config) !== instructionRevisionAtCycleStart) {
+    if (
+      result.instructionFulfillment?.ok &&
+      !result.instructionFulfillment.fulfilled &&
+      !result.instructionFulfillment.skipped
+    ) {
+      logger.log("[ai-auto] active instructions are not fulfilled yet; starting next cycle immediately");
+      continue;
+    }
+
+    if (
+      getInstructionRevision(config) !== instructionRevisionAtCycleStart &&
+      !result.instructionsCleared
+    ) {
       logger.log("[ai-auto] instructions changed during the cycle; starting next cycle immediately");
       continue;
     }

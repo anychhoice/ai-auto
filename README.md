@@ -339,7 +339,7 @@ npm run run
 /whatnow
 ```
 
-cycle이 끝날 때 보내는 Telegram 보고는 cycle 로그 파일을 읽어서 결과, 작업 요약, 검증, 커밋, 로그 파일명을 한 줄로 보냅니다.
+cycle이 끝날 때 보내는 Telegram 보고는 cycle 로그 파일을 읽어서 한국어 상태, 작업 요약, 검증, 커밋만 짧은 한 줄로 보냅니다.
 
 긴 cycle이 진행 중일 때 현재 무엇을 하는지 바로 보려면 다음 명령을 보냅니다.
 
@@ -354,6 +354,8 @@ cycle이 끝날 때 보내는 Telegram 보고는 cycle 로그 파일을 읽어�
 ```text
 /instruct MusicXML 변환 오류를 먼저 고치고, 테스트로 재현해.
 ```
+
+cycle이 성공한 뒤에는 read-only planner가 해당 지시가 실제로 이행됐는지 다시 검증합니다. planner가 이행됐다고 판정하고, cycle 중 새 지시가 추가되지 않았을 때만 활성 지시 파일을 archive로 옮겨 자동 정리합니다. 아직 이행되지 않았다고 판정하면 대기하지 않고 다음 cycle을 바로 시작합니다.
 
 Telegram에서 사용할 수 있는 명령은 다음과 같습니다.
 

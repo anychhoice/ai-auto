@@ -49,7 +49,8 @@ test("formatTelegramCycleReport reads cycle log details", () => {
         commit: [
           { command: "git add -A", exitCode: 0, stdout: "", stderr: "" },
           { command: "git commit -m test", exitCode: 0, stdout: "[main abc1234] Add test\n", stderr: "" }
-        ]
+        ],
+        instructionsCleared: { cleared: true }
       },
       null,
       2
@@ -59,8 +60,10 @@ test("formatTelegramCycleReport reads cycle log details", () => {
   const report = formatTelegramCycleReport({ outcome: "verified", logPath });
 
   assert.equal(report.split(/\r?\n/).length, 1);
-  assert.match(report, /cycle 종료: verified/);
+  assert.match(report, /^완료 ·/);
+  assert.doesNotMatch(report, /verified/);
   assert.match(report, /Add a regression test/);
-  assert.match(report, /검증 OK 1개/);
+  assert.match(report, /검증 통과/);
   assert.match(report, /커밋 abc1234/);
+  assert.match(report, /지시 정리/);
 });

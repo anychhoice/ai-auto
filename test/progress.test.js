@@ -38,10 +38,12 @@ test("formatRunProgress creates a compact human-readable status line", () => {
     cycleNumber: 3,
     phaseLabel: "Codex 구현 중",
     detail: "Updating v2 routing and deployment checks.",
-    cycleStartedAt: "2026-05-20T00:00:00.000Z"
+    cycleStartedAt: "2026-05-20T00:00:00.000Z",
+    outcome: "verified"
   });
 
   assert.match(text, /현재: 진행 중/);
   assert.match(text, /cycle 3/);
   assert.match(text, /Codex 구현 중/);
+  assert.match(text, /결과: 완료/);
 });

@@ -13,6 +13,8 @@ const REQUIRED_FIELDS = [
   "deployRecommendation"
 ];
 
+const INSTRUCTION_FULFILLMENT_FIELDS = ["fulfilled", "reason"];
+
 function truncate(value, maxChars = 80_000) {
   const text = String(value || "");
   if (text.length <= maxChars) {
@@ -151,6 +153,28 @@ export function normalizeCyclePlan(value) {
   };
 }
 
+export function normalizeInstructionFulfillment(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Instruction fulfillment JSON must be an object.");
+  }
+
+  for (const field of INSTRUCTION_FULFILLMENT_FIELDS) {
+    if (!(field in value)) {
+      throw new Error(`Instruction fulfillment JSON is missing "${field}".`);
+    }
+  }
+
+  if (typeof value.fulfilled !== "boolean") {
+    throw new Error('Instruction fulfillment field "fulfilled" must be a boolean.');
+  }
+  assertString(value.reason, "reason");
+
+  return {
+    fulfilled: value.fulfilled,
+    reason: value.reason
+  };
+}
+
 export function buildCodexPlannerPrompt(config, context, previousFailure = "") {
   const planShape = {
     cycleSummary: "string",
@@ -218,6 +242,121 @@ export function buildCodexPlannerPrompt(config, context, previousFailure = "") {
       2
     )
   ].join("\n");
+}
+
+function compactCycleLogForFulfillment(cycleLog) {
+  const latestCodex = Array.isArray(cycleLog.codex) ? cycleLog.codex.at(-1) : null;
+  const latestVerification = Array.isArray(cycleLog.verification)
+    ? cycleLog.verification.at(-1)
+    : null;
+
+  return {
+    outcome: cycleLog.outcome,
+    activeInstruction: cycleLog.latestSessionInstructionAtPlan || cycleLog.sessionInstructionsAtPlan || "",
+    allSessionInstructions: cycleLog.sessionInstructionsAtPlan || "",
+    planSummary: cycleLog.plan?.cycleSummary || "",
+    codexPrompt: cycleLog.plan?.codexPrompt || "",
+    codexExitCode: latestCodex?.exitCode ?? null,
+    codexOutput: truncate(`${latestCodex?.stdout || ""}\n${latestCodex?.stderr || ""}`, 20_000),
+    verification: (latestVerification || []).map((result) => ({
+      command: result.command,
+      exitCode: result.exitCode,
+      timedOut: Boolean(result.timedOut),
+      aborted: Boolean(result.aborted),
+      stdout: truncate(result.stdout || "", 2_000),
+      stderr: truncate(result.stderr || "", 2_000)
+    })),
+    commit: cycleLog.commit || null,
+    deploy: cycleLog.deploy || null,
+    failureSummary: cycleLog.failureSummary || ""
+  };
+}
+
+export function buildInstructionFulfillmentPrompt(config, cycleLog) {
+  const resultShape = {
+    fulfilled: true,
+    reason: "string"
+  };
+
+  return [
+    "You are Codex acting as the read-only post-cycle planner/verifier for an unattended development loop.",
+    `Workspace: ${config.workspace}`,
+    "",
+    "Decide whether the just-finished cycle fulfilled the active natural-language user instruction.",
+    "Inspect the repository directly if useful, but do not edit files, install packages, run destructive commands, or modify secrets.",
+    "",
+    "Verification rules:",
+    "- Return fulfilled=true only if the cycle actually satisfied or conservatively verified the active instruction.",
+    "- Generic passing tests are not enough unless they directly verify the requested instruction.",
+    "- If the instruction changed during the cycle, or the evidence is ambiguous, return fulfilled=false.",
+    "- If the cycle only made unrelated progress, return fulfilled=false.",
+    "- Keep reason short and concrete.",
+    "",
+    "Return ONLY one JSON object. Do not wrap it in Markdown fences. Do not include prose before or after it.",
+    "",
+    "Required JSON shape:",
+    JSON.stringify(resultShape, null, 2),
+    "",
+    "Cycle evidence:",
+    JSON.stringify(compactCycleLogForFulfillment(cycleLog), null, 2)
+  ].join("\n");
+}
+
+export async function verifyInstructionFulfillment(config, cycleLog, options = {}) {
+  if (!String(cycleLog.sessionInstructionsAtPlan || "").trim()) {
+    return {
+      ok: true,
+      fulfilled: false,
+      reason: "No active session instruction was present at plan time.",
+      skipped: true
+    };
+  }
+
+  const prompt = buildInstructionFulfillmentPrompt(config, cycleLog);
+  const result = await runCodex(config, prompt, {
+    sandbox: config.planner?.sandbox || "read-only",
+    approvalPolicy: config.planner?.approvalPolicy || "never",
+    timeoutMs: config.planner?.timeoutMs || 20 * 60_000,
+    ephemeral: true,
+    signal: options.signal
+  });
+
+  if (result.exitCode !== 0 || result.timedOut || result.aborted) {
+    return {
+      ok: false,
+      fulfilled: false,
+      reason: `Instruction fulfillment planner failed: ${result.stderr || result.stdout || result.exitCode}`,
+      command: result.command,
+      stdout: truncate(result.stdout),
+      stderr: truncate(result.stderr, 12_000),
+      timedOut: Boolean(result.timedOut),
+      aborted: Boolean(result.aborted)
+    };
+  }
+
+  try {
+    const parsed = normalizeInstructionFulfillment(extractJsonObject(result.stdout));
+    return {
+      ok: true,
+      ...parsed,
+      command: result.command,
+      stdout: truncate(result.stdout),
+      stderr: truncate(result.stderr, 12_000),
+      timedOut: false,
+      aborted: false
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      fulfilled: false,
+      reason: `Instruction fulfillment planner returned invalid JSON: ${error.message}`,
+      command: result.command,
+      stdout: truncate(result.stdout),
+      stderr: truncate(result.stderr, 12_000),
+      timedOut: false,
+      aborted: false
+    };
+  }
 }
 
 async function createCodexCyclePlan(config, context, previousFailure, options) {
