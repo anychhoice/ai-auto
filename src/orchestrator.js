@@ -3,7 +3,7 @@ import path from "node:path";
 import { consultCodex } from "./consultation.js";
 import { runCodex } from "./codex.js";
 import { detectProjectCommands, resolveVerificationCommands } from "./detectCommands.js";
-import { getInstructionRevision, readInstructions } from "./instructions.js";
+import { getInstructionRevision, readInstructions, readLatestInstruction } from "./instructions.js";
 import { createCyclePlan } from "./planner.js";
 import { runCommand, runCommandList, summarizeCommandResult } from "./shell.js";
 import { sendTelegramCycleReport } from "./telegram.js";
@@ -38,6 +38,7 @@ function buildImplementationPrompt(
   attemptNumber,
   previousFailure,
   sessionInstructions,
+  latestSessionInstruction,
   testPolicy
 ) {
   return [
@@ -46,11 +47,15 @@ function buildImplementationPrompt(
     "",
     "Implement the plan below with small, focused changes.",
     "Treat plan.codexPrompt as the primary task.",
+    latestSessionInstruction
+      ? "The latest live operator instruction below overrides older mission/backlog work and any conflicting planner details. Satisfy it first, or verify with concrete evidence that it is already satisfied or blocked."
+      : "",
     "Run or update tests when useful. Do not deploy. Do not modify secrets.",
     testPolicy,
     "In normal cycles, make a concrete reviewable file change. Only make no code changes if the task is already fully satisfied or a safety issue blocks changes, and explain that clearly.",
     "",
     `Attempt: ${attemptNumber}`,
+    latestSessionInstruction ? `Latest live operator instruction:\n${latestSessionInstruction}` : "",
     sessionInstructions ? `Active natural-language session instructions:\n${sessionInstructions}` : "",
     previousFailure ? `Previous failure:\n${previousFailure}` : "",
     "",
@@ -61,15 +66,27 @@ function buildImplementationPrompt(
     .join("\n");
 }
 
-function buildRepairPrompt(config, plan, failureSummary, attemptNumber, sessionInstructions, testPolicy) {
+function buildRepairPrompt(
+  config,
+  plan,
+  failureSummary,
+  attemptNumber,
+  sessionInstructions,
+  latestSessionInstruction,
+  testPolicy
+) {
   return [
     "The previous implementation failed verification.",
     `Workspace: ${config.workspace}`,
     "Fix the failing tests or checks with the smallest reasonable change.",
+    latestSessionInstruction
+      ? "Keep the latest live operator instruction as the highest-priority acceptance target while repairing the failure."
+      : "",
     testPolicy,
     "Do not deploy. Do not modify secrets.",
     "",
     `Attempt: ${attemptNumber}`,
+    latestSessionInstruction ? `Latest live operator instruction:\n${latestSessionInstruction}` : "",
     sessionInstructions ? `Active natural-language session instructions:\n${sessionInstructions}` : "",
     "",
     "Original plan:",
@@ -104,6 +121,32 @@ function plannerMode(config) {
   return config.planner?.mode || "codex";
 }
 
+export function prioritizeLatestInstruction(plan, latestSessionInstruction) {
+  const instruction = String(latestSessionInstruction || "").trim();
+  if (!instruction) {
+    return plan;
+  }
+
+  return {
+    ...plan,
+    shouldModify: true,
+    cycleSummary: [
+      `Latest operator instruction: ${instruction}`,
+      "",
+      plan.cycleSummary
+    ].join("\n"),
+    codexPrompt: [
+      "Highest-priority live operator instruction:",
+      instruction,
+      "",
+      "Work on this instruction first. Do not substitute backlog, benchmark, or general mission work unless it is necessary to satisfy this instruction. If it is already complete or blocked, verify that with concrete evidence and report it before doing unrelated work.",
+      "",
+      "Planner task:",
+      plan.codexPrompt
+    ].join("\n")
+  };
+}
+
 export async function runCycle(config, logger = console, options = {}) {
   const forceSignal = getForceSignal(options);
   const context = await getWorkspaceContext(config, {
@@ -129,7 +172,7 @@ export async function runCycle(config, logger = console, options = {}) {
   }
   logger.log(`[ai-auto] planning implementation with ${plannerMode(config)}`);
   const planning = await createCyclePlan(config, context, "", { signal: forceSignal });
-  const plan = planning.plan;
+  const plan = prioritizeLatestInstruction(planning.plan, context.latestSessionInstruction);
   logger.log(`[ai-auto] plan: ${plan.shouldModify ? "modify workspace" : "no change"}`);
   const initialCommands = config.commandDiscovery.enabled
     ? resolveVerificationCommands(config, plan, context.detectedCommands)
@@ -159,6 +202,7 @@ export async function runCycle(config, logger = console, options = {}) {
   const cycleLog = {
     startedAt: new Date().toISOString(),
     sessionInstructionsAtPlan: context.sessionInstructions,
+    latestSessionInstructionAtPlan: context.latestSessionInstruction,
     codexConsultation: context.codexConsultation,
     planner: planning.planner,
     plan,
@@ -186,6 +230,7 @@ export async function runCycle(config, logger = console, options = {}) {
 
   for (let attempt = 1; attempt <= config.maxIterationsPerCycle; attempt += 1) {
     const sessionInstructions = readInstructions(config);
+    const latestSessionInstruction = readLatestInstruction(config);
     const prompt =
       attempt === 1
         ? buildImplementationPrompt(
@@ -194,6 +239,7 @@ export async function runCycle(config, logger = console, options = {}) {
             attempt,
             failureSummary,
             sessionInstructions,
+            latestSessionInstruction,
             initialTestPolicy
           )
         : buildRepairPrompt(
@@ -202,6 +248,7 @@ export async function runCycle(config, logger = console, options = {}) {
             failureSummary,
             attempt,
             sessionInstructions,
+            latestSessionInstruction,
             initialTestPolicy
           );
 
@@ -350,6 +397,7 @@ export async function runLoop(config, logger = console, options = {}) {
     !isForceShutdown(options)
   ) {
     cycleNumber += 1;
+    const instructionRevisionAtCycleStart = getInstructionRevision(config);
     logger.log(`[ai-auto] starting cycle ${cycleNumber}`);
     let result;
     try {
@@ -371,6 +419,11 @@ export async function runLoop(config, logger = console, options = {}) {
 
     if (options.shutdown?.gracefulRequested || result.outcome === "force_shutdown") {
       break;
+    }
+
+    if (getInstructionRevision(config) !== instructionRevisionAtCycleStart) {
+      logger.log("[ai-auto] instructions changed during the cycle; starting next cycle immediately");
+      continue;
     }
 
     const remaining = deadline - Date.now();

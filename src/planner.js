@@ -151,7 +151,7 @@ export function normalizeCyclePlan(value) {
   };
 }
 
-function buildCodexPlannerPrompt(config, context, previousFailure = "") {
+export function buildCodexPlannerPrompt(config, context, previousFailure = "") {
   const planShape = {
     cycleSummary: "string",
     discussion: [{ role: "architect|implementer|reviewer|release-manager", position: "string", risk: "string" }],
@@ -178,10 +178,14 @@ function buildCodexPlannerPrompt(config, context, previousFailure = "") {
     "Return ONLY one JSON object. Do not wrap it in Markdown fences. Do not include prose before or after it.",
     "",
     "Planning rules:",
+    "- latestSessionInstruction is the highest-priority live operator instruction. If it is non-empty, the plan must satisfy that instruction now.",
+    "- Do not replace latestSessionInstruction with general backlog, benchmark, refactor, or inferred continuation work unless that work is necessary to satisfy the latest instruction.",
+    "- Older active session instructions are context; the newest instruction wins when there is tension.",
     "- Current config instructions and active session instructions are direct operator intent.",
     "- If newConfigInstruction is present, it has priority over resume state and inferred continuation work.",
     "- If resumedFromCommit is present, treat that commit as already completed and do not repeat it.",
     "- Default to shouldModify=true unless the workspace is blocked or already complete.",
+    "- If latestSessionInstruction is already satisfied, codexPrompt must ask the worker to verify that with concrete evidence and then stop instead of choosing unrelated work.",
     "- Pick one concrete, reviewable implementation task for the next Codex worker.",
     "- Do not choose a test-only or benchmark-only task unless existing measurement genuinely cannot expose the requested behavior.",
     "- When quality infrastructure already exists, choose an existing low-scoring/failing fixture or report and ask the worker to improve algorithm/converter behavior.",
@@ -199,6 +203,7 @@ function buildCodexPlannerPrompt(config, context, previousFailure = "") {
         operatorInstruction: context.operatorInstruction,
         newConfigInstruction: context.runState?.newConfigInstruction || null,
         resumedFromCommit: context.runState?.resumedFromCommit || null,
+        latestSessionInstruction: context.latestSessionInstruction || "",
         sessionInstructions: context.sessionInstructions,
         detectedCommands: context.detectedCommands,
         gitStatus: context.status,

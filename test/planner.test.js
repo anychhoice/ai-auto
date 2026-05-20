@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractJsonObject, normalizeCyclePlan } from "../src/planner.js";
+import { buildCodexPlannerPrompt, extractJsonObject, normalizeCyclePlan } from "../src/planner.js";
 
 const validPlan = {
   cycleSummary: "Improve an existing low-scoring fixture.",
@@ -41,4 +41,25 @@ test("normalizeCyclePlan validates the required planner shape", () => {
     () => normalizeCyclePlan({ ...validPlan, shouldModify: "true" }),
     /shouldModify/
   );
+});
+
+test("codex planner prompt makes the latest session instruction highest priority", () => {
+  const prompt = buildCodexPlannerPrompt(
+    { workspace: "/tmp/project", commands: { test: [], verify: [] } },
+    {
+      mission: "Improve the project continuously.",
+      operatorInstruction: "",
+      runState: null,
+      latestSessionInstruction: "Check /v2 routing and deploy pending changes.",
+      sessionInstructions: "Older instruction\n\nCheck /v2 routing and deploy pending changes.",
+      detectedCommands: { test: [], verify: [], reasons: [] },
+      status: "clean",
+      trackedFiles: [],
+      untrackedFiles: [],
+      packageJson: ""
+    }
+  );
+
+  assert.match(prompt, /latestSessionInstruction is the highest-priority live operator instruction/);
+  assert.match(prompt, /Check \/v2 routing and deploy pending changes/);
 });

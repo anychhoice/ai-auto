@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { detectProjectCommands } from "./detectCommands.js";
-import { readInstructions } from "./instructions.js";
+import { readInstructions, readLatestInstruction } from "./instructions.js";
 import { runCommand, runCommandList, runProcess, summarizeCommandResult } from "./shell.js";
 
 export async function getWorkspaceContext(config, options = {}) {
@@ -34,6 +34,7 @@ export async function getWorkspaceContext(config, options = {}) {
     operatorInstruction: config.operatorInstruction || "",
     runState: options.runState || null,
     sessionInstructions: readInstructions(config),
+    latestSessionInstruction: readLatestInstruction(config),
     detectedCommands: config.commandDiscovery.enabled
       ? detectProjectCommands(config.workspace)
       : { test: [], verify: [], reasons: [] },

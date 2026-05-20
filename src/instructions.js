@@ -39,6 +39,24 @@ export function readInstructions(config) {
   ].join("\n\n");
 }
 
+export function readLatestInstruction(config) {
+  if (!fs.existsSync(config.instructionFile)) {
+    return "";
+  }
+
+  const content = fs.readFileSync(config.instructionFile, "utf8").trim();
+  if (!content) {
+    return "";
+  }
+
+  const entries = content
+    .split(/^##\s+.+$/m)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  return entries.at(-1) || content;
+}
+
 export function getInstructionRevision(config) {
   if (!fs.existsSync(config.instructionFile)) {
     return "missing";

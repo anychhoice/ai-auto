@@ -7,7 +7,8 @@ import {
   appendInstruction,
   clearInstructions,
   getInstructionRevision,
-  readInstructions
+  readInstructions,
+  readLatestInstruction
 } from "../src/instructions.js";
 
 function tempConfig() {
@@ -24,6 +25,15 @@ test("appendInstruction stores natural-language instructions", () => {
   const content = readInstructions(config);
 
   assert.match(content, /Prioritize the login bug first/);
+});
+
+test("readLatestInstruction returns the newest active instruction", () => {
+  const config = tempConfig();
+
+  appendInstruction(config, "First instruction");
+  appendInstruction(config, "Second instruction\nwith detail");
+
+  assert.equal(readLatestInstruction(config), "Second instruction\nwith detail");
 });
 
 test("getInstructionRevision changes when instructions change", () => {
