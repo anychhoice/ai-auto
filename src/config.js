@@ -18,6 +18,9 @@ export const DEFAULT_CONFIG = {
     archiveCycleLogs: true,
     stateFile: ".ai-auto/run-state.json"
   },
+  progress: {
+    stateFile: ".ai-auto/current-status.json"
+  },
   allowPlannerCommandOverride: false,
   commandDiscovery: {
     enabled: true,

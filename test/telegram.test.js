@@ -58,10 +58,9 @@ test("formatTelegramCycleReport reads cycle log details", () => {
 
   const report = formatTelegramCycleReport({ outcome: "verified", logPath });
 
-  assert.match(report, /무엇을 했나/);
+  assert.equal(report.split(/\r?\n/).length, 1);
+  assert.match(report, /cycle 종료: verified/);
   assert.match(report, /Add a regression test/);
-  assert.match(report, /Codex 결과/);
-  assert.match(report, /Implemented MusicXML/);
-  assert.match(report, /OK npm test/);
-  assert.match(report, /\[main abc1234\] Add test/);
+  assert.match(report, /검증 OK 1개/);
+  assert.match(report, /커밋 abc1234/);
 });

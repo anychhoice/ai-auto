@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { appendInstruction, clearInstructions, readInstructions } from "./instructions.js";
+import { formatRunProgress, readRunProgress } from "./progress.js";
 import { buildWhatNowSummary } from "./statusSummary.js";
 
 const TELEGRAM_API = "https://api.telegram.org";
@@ -29,6 +30,10 @@ function truncate(value, maxChars = MAX_REPORT_FIELD_LENGTH) {
     return text;
   }
   return `${text.slice(0, maxChars - 20)} ...[줄임]`;
+}
+
+function compactLine(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
 }
 
 function readJsonIfExists(filePath) {
@@ -94,82 +99,44 @@ export async function sendTelegramCycleReport(config, result) {
   await sendTelegramMessage(config, formatTelegramCycleReport(result));
 }
 
-function formatCommandStatus(commandResult) {
-  const status =
-    commandResult.exitCode === 0 && !commandResult.timedOut && !commandResult.aborted
-      ? "OK"
-      : "FAIL";
-  return `${status} ${commandResult.command}`;
-}
-
-function formatVerificationSummary(log) {
+function formatVerificationOneLine(log) {
   const latest = Array.isArray(log?.verification) ? log.verification.at(-1) : null;
   if (!latest?.length) {
-    return "검증 기록 없음";
+    return "검증 없음";
   }
-  return latest.map(formatCommandStatus).join("\n");
+  const failed = latest.find((result) => result.exitCode !== 0 || result.timedOut || result.aborted);
+  return failed ? `검증 실패: ${compactLine(failed.command)}` : `검증 OK ${latest.length}개`;
 }
 
-function formatCodexSummary(log) {
-  const latest = Array.isArray(log?.codex) ? log.codex.at(-1) : null;
-  const output = `${latest?.stdout || ""}\n${latest?.stderr || ""}`.trim();
-  if (!output) {
-    return "Codex 결과 기록 없음";
-  }
-  return truncate(output);
-}
-
-function formatCommitSummary(log) {
+function formatCommitOneLine(log) {
   const commitResults = Array.isArray(log?.commit) ? log.commit : [];
   if (!commitResults.length) {
     return "커밋 없음";
   }
 
   const commit = commitResults.at(-1);
-  const output = `${commit?.stdout || ""}${commit?.stderr || ""}`.trim();
-  if (commit?.exitCode === 0 && output) {
-    return truncate(output, 500);
-  }
+  const output = `${commit?.stdout || ""}\n${commit?.stderr || ""}`.trim();
   if (commit?.exitCode === 0) {
-    return "커밋 완료";
+    const hash = output.match(/\[[^\s]+ ([0-9a-f]{7,40})\]/i)?.[1];
+    return hash ? `커밋 ${hash}` : "커밋 완료";
   }
-  return truncate(`커밋 실패: ${output || commit?.command || "unknown"}`, 500);
+  return `커밋 실패: ${truncate(compactLine(output || commit?.command || "unknown"), 120)}`;
 }
 
 export function formatTelegramCycleReport(result) {
   const log = readJsonIfExists(result.logPath);
   const plan = log?.plan || result.plan || {};
-  const summary = plan.cycleSummary || plan.codexPrompt || "";
-  const lines = [
-    "ai-auto cycle 종료",
-    "",
-    `결과: ${result.outcome}`,
-    "",
-    "무엇을 했나",
-    truncate(summary || "cycle 요약 없음"),
-    "",
-    "Codex 결과",
-    formatCodexSummary(log),
-    "",
-    "검증",
-    truncate(formatVerificationSummary(log), 700),
-    "",
-    "커밋",
-    formatCommitSummary(log)
-  ];
+  const summary = truncate(compactLine(plan.cycleSummary || plan.codexPrompt || "cycle 요약 없음"), 180);
+  const failure = log?.failureSummary ? ` | 실패: ${truncate(compactLine(log.failureSummary), 140)}` : "";
+  const logName = result.logPath ? path.basename(result.logPath) : "로그 없음";
 
-  if (log?.failureSummary) {
-    lines.push("", "실패/미완료", truncate(log.failureSummary, 700));
-  }
-
-  lines.push(
-    "",
-    `로그: ${result.logPath}`,
-    "",
-    "자세한 누적 요약은 Telegram에서 /whatnow 를 보내거나 로컬에서 ./scripts/what-now.js 를 실행하세요."
-  );
-
-  return lines.join("\n");
+  return [
+    `cycle 종료: ${result.outcome}`,
+    summary,
+    formatVerificationOneLine(log),
+    formatCommitOneLine(log),
+    `로그 ${logName}${failure}`
+  ].join(" | ");
 }
 
 function stateFilePath(config) {
@@ -262,12 +229,21 @@ async function handleTelegramCommand(config, update) {
 
   if (command === "whatnow") {
     try {
-      await sendTelegramMessage(config, "요약 생성 중입니다...", chatId);
+      await sendTelegramMessage(
+        config,
+        ["요약 생성 중입니다...", formatRunProgress(readRunProgress(config))].join("\n"),
+        chatId
+      );
       const summary = await buildWhatNowSummary(config, process.cwd(), { timeoutMs: 120_000 });
       await sendTelegramMessage(config, summary, chatId);
     } catch (error) {
       await sendTelegramMessage(config, `요약 실패: ${error.message}`, chatId);
     }
+    return;
+  }
+
+  if (command === "status" || command === "now") {
+    await sendTelegramMessage(config, formatRunProgress(readRunProgress(config)), chatId);
     return;
   }
 
@@ -309,6 +285,7 @@ async function handleTelegramCommand(config, update) {
       [
         "사용 가능 명령:",
         "/whatnow - 현재 실행 요약",
+        "/status 또는 /now - 진행 중인 cycle 상태 즉시 확인",
         "/instruct 자연어 지시 - 실행 중인 세션에 지시 추가",
         "/show - 활성 지시 확인",
         "/clear - 활성 지시 정리"

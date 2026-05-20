@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { formatRunProgress, readRunProgress } from "./progress.js";
 
 const MAX_FIELD_CHARS = 900;
 
@@ -87,6 +88,7 @@ export function collectStatusSummaryInput(config, root = process.cwd()) {
   const cycleLogs = findCycleLogs(logDir);
   const cycles = cycleLogs.map(compactCycleLog).filter(Boolean);
   const latest = cycles.at(-1) || null;
+  const progress = readRunProgress({ ...config, workspace });
   const firstCycleStartedAt = cycles[0]?.startedAt;
   const gitStatus = run("git", ["status", "--short"], workspace);
   const branch = run("git", ["branch", "--show-current"], workspace);
@@ -101,7 +103,9 @@ export function collectStatusSummaryInput(config, root = process.cwd()) {
     cycles,
     gitStatus: gitStatus.stdout || "변경 없음",
     commitsDuringRun: commitsDuringRun.stdout || "커밋 없음",
+    progress,
     summaryInput: {
+      currentProgress: progress,
       cycleCount: cycles.length,
       range: {
         startedAt: cycles[0]?.startedAt || "",
@@ -186,6 +190,9 @@ export function formatStatusSummary(status, koreanSummary) {
     "",
     `프로젝트: ${status.workspace}`,
     `브랜치: ${status.branch}`,
+    "",
+    "현재 상태",
+    formatRunProgress(status.progress),
     ""
   ];
 

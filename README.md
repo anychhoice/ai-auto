@@ -339,7 +339,15 @@ npm run run
 /whatnow
 ```
 
-cycle이 끝날 때 보내는 Telegram 보고는 cycle 로그 파일을 읽어서 계획 요약, Codex 결과, 검증 명령 결과, 커밋 결과를 함께 보냅니다.
+cycle이 끝날 때 보내는 Telegram 보고는 cycle 로그 파일을 읽어서 결과, 작업 요약, 검증, 커밋, 로그 파일명을 한 줄로 보냅니다.
+
+긴 cycle이 진행 중일 때 현재 무엇을 하는지 바로 보려면 다음 명령을 보냅니다.
+
+```text
+/status
+```
+
+`/now`도 같은 명령입니다.
 
 실행 중인 세션에 원격 지시를 추가하려면 다음처럼 보냅니다.
 
@@ -350,6 +358,7 @@ cycle이 끝날 때 보내는 Telegram 보고는 cycle 로그 파일을 읽어�
 Telegram에서 사용할 수 있는 명령은 다음과 같습니다.
 
 - `/whatnow`: 현재 실행 누적 요약
+- `/status` 또는 `/now`: 진행 중인 cycle 상태 즉시 확인
 - `/instruct 자연어 지시`: 실행 중인 세션에 지시 추가
 - `/show`: 현재 활성 지시 확인
 - `/clear`: 활성 지시 정리
@@ -727,9 +736,21 @@ Telegram 연동 설정입니다.
 - `chatIdEnv`: 기본 chat id를 읽을 환경변수 이름
 - `chatId`: 환경변수 대신 직접 지정할 chat id
 - `reportCycles`: cycle 종료 보고 여부
-- `commands.enabled`: `/whatnow`, `/instruct`, `/show`, `/clear` long polling 사용 여부
+- `commands.enabled`: `/whatnow`, `/status`, `/now`, `/instruct`, `/show`, `/clear` long polling 사용 여부
 - `commands.allowedChatIds`: 명령을 허용할 chat id 목록
 - `commands.stateFile`: Telegram `getUpdates` offset 저장 파일
+
+### progress
+
+```json
+{
+  "progress": {
+    "stateFile": ".ai-auto/current-status.json"
+  }
+}
+```
+
+현재 실행 중인 cycle 상태를 저장하는 파일입니다. runner는 계획 수립, Codex 구현, 검증, 커밋, 배포, 대기 상태를 이 파일에 갱신합니다.
 
 ### mission
 
@@ -794,7 +815,7 @@ npm run once
 npm run run
 ```
 
-설정된 시간 동안 반복 실행합니다. 기본 예시는 24시간입니다. `telegram.commands.enabled`가 true이면 같은 프로세스에서 Telegram `/whatnow`, `/instruct`, `/show`, `/clear` 명령도 함께 받습니다.
+설정된 시간 동안 반복 실행합니다. 기본 예시는 24시간입니다. `telegram.commands.enabled`가 true이면 같은 프로세스에서 Telegram `/whatnow`, `/status`, `/now`, `/instruct`, `/show`, `/clear` 명령도 함께 받습니다.
 
 ```bash
 npm run telegram

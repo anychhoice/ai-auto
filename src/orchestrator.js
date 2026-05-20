@@ -5,6 +5,7 @@ import { runCodex } from "./codex.js";
 import { detectProjectCommands, resolveVerificationCommands } from "./detectCommands.js";
 import { getInstructionRevision, readInstructions, readLatestInstruction } from "./instructions.js";
 import { createCyclePlan } from "./planner.js";
+import { writeRunProgress } from "./progress.js";
 import { runCommand, runCommandList, summarizeCommandResult } from "./shell.js";
 import { sendTelegramCycleReport } from "./telegram.js";
 import { commitAll, getWorkspaceContext, isGitClean } from "./workspace.js";
@@ -22,6 +23,14 @@ function writeJsonLog(config, name, data) {
   const filePath = path.join(config.logDir, `${timestamp()}-${name}.json`);
   fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`);
   return filePath;
+}
+
+function recordProgress(config, logger, patch) {
+  try {
+    writeRunProgress(config, patch);
+  } catch (error) {
+    logger.warn?.(`[ai-auto] failed to write progress status: ${error.message}`);
+  }
 }
 
 function resultsPassed(results) {
@@ -149,6 +158,18 @@ export function prioritizeLatestInstruction(plan, latestSessionInstruction) {
 
 export async function runCycle(config, logger = console, options = {}) {
   const forceSignal = getForceSignal(options);
+  const cycleNumber = options.cycleNumber || null;
+  const cycleStartedAt = new Date().toISOString();
+  recordProgress(config, logger, {
+    running: true,
+    cycleNumber,
+    cycleStartedAt,
+    phase: "context",
+    phaseLabel: "프로젝트 상태 확인 중",
+    detail: "git 상태, 파일 목록, 지시사항, 테스트 명령을 읽는 중입니다.",
+    outcome: "",
+    logPath: ""
+  });
   const context = await getWorkspaceContext(config, {
     signal: forceSignal,
     runState: options.runState || null
@@ -165,15 +186,32 @@ export async function runCycle(config, logger = console, options = {}) {
     logger.log("[ai-auto] skipping separate Codex consultation; Codex planner will inspect read-only");
   } else {
     logger.log("[ai-auto] consulting Codex in read-only mode");
+    recordProgress(config, logger, {
+      phase: "consultation",
+      phaseLabel: "Codex read-only 상담 중",
+      detail: "대상 프로젝트를 읽고 다음 작업 후보를 묻는 중입니다."
+    });
     context.codexConsultation = await consultCodex(config, context, { signal: forceSignal });
     logger.log(
       `[ai-auto] Codex consultation: ${context.codexConsultation.ok ? "ok" : "failed"}`
     );
   }
   logger.log(`[ai-auto] planning implementation with ${plannerMode(config)}`);
+  recordProgress(config, logger, {
+    phase: "planning",
+    phaseLabel: "계획 수립 중",
+    detail: `${plannerMode(config)} planner가 최신 지시와 현재 로그를 보고 이번 cycle 작업을 고르는 중입니다.`
+  });
   const planning = await createCyclePlan(config, context, "", { signal: forceSignal });
   const plan = prioritizeLatestInstruction(planning.plan, context.latestSessionInstruction);
   logger.log(`[ai-auto] plan: ${plan.shouldModify ? "modify workspace" : "no change"}`);
+  recordProgress(config, logger, {
+    phase: "plan_ready",
+    phaseLabel: "계획 완료",
+    detail: plan.cycleSummary || plan.codexPrompt || "",
+    planSummary: plan.cycleSummary || "",
+    shouldModify: plan.shouldModify
+  });
   const initialCommands = config.commandDiscovery.enabled
     ? resolveVerificationCommands(config, plan, context.detectedCommands)
     : {
@@ -215,13 +253,30 @@ export async function runCycle(config, logger = console, options = {}) {
   };
 
   if (isForceShutdown(options)) {
-    return writeForceShutdownLog(config, cycleLog, plan);
+    const result = writeForceShutdownLog(config, cycleLog, plan);
+    recordProgress(config, logger, {
+      running: false,
+      phase: "force_shutdown",
+      phaseLabel: "강제 종료됨",
+      detail: "운영자가 강제 종료했습니다.",
+      outcome: result.outcome,
+      logPath: result.logPath
+    });
+    return result;
   }
 
   if (!plan.shouldModify) {
     cycleLog.finishedAt = new Date().toISOString();
     cycleLog.outcome = "no_change_requested";
     const logPath = writeJsonLog(config, "cycle", cycleLog);
+    recordProgress(config, logger, {
+      running: false,
+      phase: "completed",
+      phaseLabel: "변경 없음",
+      detail: plan.cycleSummary || "변경할 작업이 없다고 판단했습니다.",
+      outcome: cycleLog.outcome,
+      logPath
+    });
     return { ok: true, outcome: cycleLog.outcome, logPath, plan };
   }
 
@@ -253,11 +308,27 @@ export async function runCycle(config, logger = console, options = {}) {
           );
 
     logger.log(`[ai-auto] running Codex implementation attempt ${attempt} in ${config.codex.sandbox}`);
+    recordProgress(config, logger, {
+      running: true,
+      phase: "implementation",
+      phaseLabel: `Codex 구현 중 (${attempt}/${config.maxIterationsPerCycle})`,
+      detail: plan.codexPrompt || plan.cycleSummary || "",
+      attemptNumber: attempt
+    });
     const codexResult = await runCodex(config, prompt, { signal: forceSignal });
     cycleLog.codex.push(codexResult);
 
     if (isForceShutdown(options)) {
-      return writeForceShutdownLog(config, cycleLog, plan);
+      const result = writeForceShutdownLog(config, cycleLog, plan);
+      recordProgress(config, logger, {
+        running: false,
+        phase: "force_shutdown",
+        phaseLabel: "강제 종료됨",
+        detail: "Codex 실행 중 운영자가 강제 종료했습니다.",
+        outcome: result.outcome,
+        logPath: result.logPath
+      });
+      return result;
     }
 
     const detectedCommands = config.commandDiscovery.enabled
@@ -278,6 +349,13 @@ export async function runCycle(config, logger = console, options = {}) {
     cycleLog.executedCommands.push(resolvedCommands);
 
     logger.log(`[ai-auto] running ${commands.length} verification command(s)`);
+    recordProgress(config, logger, {
+      running: true,
+      phase: "verification",
+      phaseLabel: "검증 실행 중",
+      detail: commands.length ? commands.join(" && ") : "실행할 검증 명령이 없습니다.",
+      verificationCommandCount: commands.length
+    });
     verificationResults = await runCommandList(commands, {
       cwd: config.workspace,
       timeoutMs: 30 * 60_000,
@@ -286,7 +364,16 @@ export async function runCycle(config, logger = console, options = {}) {
     cycleLog.verification.push(verificationResults);
 
     if (isForceShutdown(options)) {
-      return writeForceShutdownLog(config, cycleLog, plan);
+      const result = writeForceShutdownLog(config, cycleLog, plan);
+      recordProgress(config, logger, {
+        running: false,
+        phase: "force_shutdown",
+        phaseLabel: "강제 종료됨",
+        detail: "검증 중 운영자가 강제 종료했습니다.",
+        outcome: result.outcome,
+        logPath: result.logPath
+      });
+      return result;
     }
 
     if (
@@ -319,17 +406,46 @@ export async function runCycle(config, logger = console, options = {}) {
       failureSummary ||
       "No runnable test command was detected. Codex must add a minimal test setup before this cycle can pass.";
     const logPath = writeJsonLog(config, "cycle", cycleLog);
+    recordProgress(config, logger, {
+      running: false,
+      phase: "failed",
+      phaseLabel: cycleLog.outcome === "test_setup_missing" ? "테스트 셋업 미완료" : "검증 실패",
+      detail: cycleLog.failureSummary,
+      outcome: cycleLog.outcome,
+      logPath
+    });
     return { ok: false, outcome: cycleLog.outcome, logPath, plan };
   }
 
   if (config.autoCommit) {
+    recordProgress(config, logger, {
+      running: true,
+      phase: "commit",
+      phaseLabel: "커밋 생성 중",
+      detail: plan.commitMessage
+    });
     cycleLog.commit = await commitAll(config.workspace, plan.commitMessage, { signal: forceSignal });
     if (isForceShutdown(options)) {
-      return writeForceShutdownLog(config, cycleLog, plan);
+      const result = writeForceShutdownLog(config, cycleLog, plan);
+      recordProgress(config, logger, {
+        running: false,
+        phase: "force_shutdown",
+        phaseLabel: "강제 종료됨",
+        detail: "커밋 중 운영자가 강제 종료했습니다.",
+        outcome: result.outcome,
+        logPath: result.logPath
+      });
+      return result;
     }
   }
 
   if (config.deploy.enabled) {
+    recordProgress(config, logger, {
+      running: true,
+      phase: "deploy",
+      phaseLabel: "배포 확인/실행 중",
+      detail: config.deploy.command || "deploy.command가 비어 있어 배포를 건너뛸지 확인 중입니다."
+    });
     if (!config.deploy.command) {
       cycleLog.deploy = {
         skipped: true,
@@ -352,19 +468,42 @@ export async function runCycle(config, logger = console, options = {}) {
     }
 
     if (isForceShutdown(options)) {
-      return writeForceShutdownLog(config, cycleLog, plan);
+      const result = writeForceShutdownLog(config, cycleLog, plan);
+      recordProgress(config, logger, {
+        running: false,
+        phase: "force_shutdown",
+        phaseLabel: "강제 종료됨",
+        detail: "배포 중 운영자가 강제 종료했습니다.",
+        outcome: result.outcome,
+        logPath: result.logPath
+      });
+      return result;
     }
   }
 
   cycleLog.finishedAt = new Date().toISOString();
   cycleLog.outcome = "verified";
   const logPath = writeJsonLog(config, "cycle", cycleLog);
+  recordProgress(config, logger, {
+    running: false,
+    phase: "completed",
+    phaseLabel: "cycle 완료",
+    detail: plan.cycleSummary || "",
+    outcome: cycleLog.outcome,
+    logPath
+  });
   return { ok: true, outcome: cycleLog.outcome, logPath, plan };
 }
 
 async function sleepUntilNextCycle(config, sleepMs, logger, options = {}) {
   const deadline = Date.now() + sleepMs;
   const initialInstructionRevision = getInstructionRevision(config);
+  recordProgress(config, logger, {
+    running: false,
+    phase: "sleeping",
+    phaseLabel: "다음 cycle 대기 중",
+    detail: `${Math.round(sleepMs / 1000)}초 뒤 다음 cycle을 시작합니다.`
+  });
 
   while (
     Date.now() < deadline &&
@@ -390,6 +529,16 @@ export async function runLoop(config, logger = console, options = {}) {
   const startedAt = Date.now();
   const deadline = startedAt + config.maxRuntimeMs;
   let cycleNumber = 0;
+  recordProgress(config, logger, {
+    running: false,
+    runStartedAt: new Date(startedAt).toISOString(),
+    phase: "starting",
+    phaseLabel: "러너 시작 중",
+    detail: "ai-auto run loop를 시작합니다.",
+    cycleNumber: 0,
+    outcome: "",
+    logPath: ""
+  });
 
   while (
     Date.now() < deadline &&
@@ -401,7 +550,7 @@ export async function runLoop(config, logger = console, options = {}) {
     logger.log(`[ai-auto] starting cycle ${cycleNumber}`);
     let result;
     try {
-      result = await runCycle(config, logger, options);
+      result = await runCycle(config, logger, { ...options, cycleNumber });
     } catch (error) {
       if (isForceShutdown(options) || isAbortError(error)) {
         logger.log("[ai-auto] forced shutdown interrupted the active cycle");
@@ -437,4 +586,10 @@ export async function runLoop(config, logger = console, options = {}) {
   }
 
   logger.log("[ai-auto] run window complete");
+  recordProgress(config, logger, {
+    running: false,
+    phase: "complete",
+    phaseLabel: "실행 창 종료",
+    detail: "설정된 run window가 끝났습니다."
+  });
 }
