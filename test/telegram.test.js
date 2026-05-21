@@ -43,7 +43,7 @@ test("formatTelegramCycleReport reads cycle log details", () => {
     `${JSON.stringify(
       {
         outcome: "verified",
-        plan: { cycleSummary: "Add a regression test for MusicXML conversion." },
+        plan: { cycleSummary: "MusicXML 변환 회귀 테스트를 추가했습니다." },
         codex: [{ stdout: "Implemented MusicXML conversion regression coverage.", stderr: "" }],
         verification: [[{ command: "npm test", exitCode: 0, timedOut: false }]],
         commit: [
@@ -62,8 +62,39 @@ test("formatTelegramCycleReport reads cycle log details", () => {
   assert.equal(report.split(/\r?\n/).length, 1);
   assert.match(report, /^완료 ·/);
   assert.doesNotMatch(report, /verified/);
-  assert.match(report, /Add a regression test/);
+  assert.match(report, /개발: MusicXML 변환 회귀 테스트/);
   assert.match(report, /검증 통과/);
   assert.match(report, /커밋 abc1234/);
   assert.match(report, /지시 정리/);
+});
+
+test("formatTelegramCycleReport ignores clean-workspace summaries", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-auto-telegram-"));
+  const logPath = path.join(dir, "cycle.json");
+  fs.writeFileSync(
+    logPath,
+    `${JSON.stringify(
+      {
+        outcome: "verified",
+        plan: { cycleSummary: "Workspace is clean, Repo is clean." },
+        codex: [{ stdout: "Workspace is clean. Repository is clean.", stderr: "" }],
+        verification: [[{ command: "npm test", exitCode: 0, timedOut: false }]],
+        commit: [
+          {
+            command: "git commit -m test",
+            exitCode: 0,
+            stdout: "[main def5678] fix(functions): improve v2 route reporting\n",
+            stderr: ""
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`
+  );
+
+  const report = formatTelegramCycleReport({ outcome: "verified", logPath });
+
+  assert.doesNotMatch(report, /Workspace is clean/i);
+  assert.match(report, /개발: fix\(functions\): improve v2 route reporting/);
 });

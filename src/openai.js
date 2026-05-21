@@ -184,6 +184,7 @@ export async function createCyclePlan(config, context, previousFailure = "", opt
       "latestSessionInstruction is the highest-priority live operator instruction. If it is non-empty, plan work that satisfies it now.",
       "Do not replace latestSessionInstruction with general backlog, benchmark, refactor, or inferred continuation work unless that work is necessary to satisfy the latest instruction.",
       "Older active session instructions are context; the newest instruction wins when there is tension.",
+      "cycleSummary must be Korean and must say what will be developed or verified for the user. Do not summarize with cleanliness/status phrases like \"workspace is clean\", \"repo is clean\", or \"working tree clean\".",
       "Treat current config instructions as direct operator intent. If newConfigInstruction is present, it has priority over resume state, previous logs, and inferred continuation work.",
       "Use resumedFromCommit only as continuity context after already satisfying current config instructions and active session instructions.",
       "When resumedFromCommit is present, do not repeat that committed work; inspect the current git status for any uncommitted work that happened after it.",

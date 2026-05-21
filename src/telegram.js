@@ -48,7 +48,45 @@ function outcomeLabel(outcome) {
 }
 
 function cleanSummary(value) {
-  return compactLine(value).replace(/^Latest operator instruction:\s*/i, "지시: ");
+  return compactLine(value)
+    .replace(/^Latest operator instruction:\s*/i, "지시: ")
+    .replace(/^최신 지시:\s*/, "지시: ");
+}
+
+function isCleanlinessSummary(value) {
+  return /^(workspace|repo|repository|working tree)\s+is\s+clean\b|working tree clean\b|nothing to commit\b|clean working tree\b/i.test(value);
+}
+
+function extractCommitSubject(log) {
+  const commitResults = Array.isArray(log?.commit) ? log.commit : [];
+  const commit = commitResults.at(-1);
+  const output = `${commit?.stdout || ""}\n${commit?.stderr || ""}`.trim();
+  return compactLine(output.match(/\[[^\s]+ [0-9a-f]{7,40}\]\s+(.+)/i)?.[1] || "");
+}
+
+function extractCodexWorkSummary(log) {
+  const latest = Array.isArray(log?.codex) ? log.codex.at(-1) : null;
+  const output = compactLine(`${latest?.stdout || ""}\n${latest?.stderr || ""}`);
+  if (!output) {
+    return "";
+  }
+
+  const match = output.match(/(?:구현|수정|개선|추가|변경|확인|검증|Implemented|Added|Fixed|Updated|Improved)[^.。!?\n]{0,180}/i);
+  return compactLine(match?.[0] || output.slice(0, 180));
+}
+
+function formatDevelopmentSummary(log, plan) {
+  const candidates = [
+    plan.cycleSummary,
+    extractCodexWorkSummary(log),
+    extractCommitSubject(log),
+    plan.codexPrompt
+  ]
+    .map(cleanSummary)
+    .filter(Boolean)
+    .filter((item) => !isCleanlinessSummary(item));
+
+  return `개발: ${truncate(candidates[0] || "이번 cycle의 개발 요약 없음", 100)}`;
 }
 
 function readJsonIfExists(filePath) {
@@ -141,7 +179,7 @@ function formatCommitOneLine(log) {
 export function formatTelegramCycleReport(result) {
   const log = readJsonIfExists(result.logPath);
   const plan = log?.plan || result.plan || {};
-  const summary = truncate(cleanSummary(plan.cycleSummary || plan.codexPrompt || "cycle 요약 없음"), 100);
+  const summary = formatDevelopmentSummary(log, plan);
   const failure = log?.failureSummary ? `실패: ${truncate(compactLine(log.failureSummary), 90)}` : "";
   const instructionsCleared = log?.instructionsCleared?.cleared ? "지시 정리" : "";
 

@@ -209,6 +209,7 @@ export function buildCodexPlannerPrompt(config, context, previousFailure = "") {
     "- If newConfigInstruction is present, it has priority over resume state and inferred continuation work.",
     "- If resumedFromCommit is present, treat that commit as already completed and do not repeat it.",
     "- Default to shouldModify=true unless the workspace is blocked or already complete.",
+    "- cycleSummary must be Korean and must say what will be developed or verified for the user. Do not summarize with cleanliness/status phrases like \"workspace is clean\", \"repo is clean\", or \"working tree clean\".",
     "- If latestSessionInstruction is already satisfied, codexPrompt must ask the worker to verify that with concrete evidence and then stop instead of choosing unrelated work.",
     "- Pick one concrete, reviewable implementation task for the next Codex worker.",
     "- Do not choose a test-only or benchmark-only task unless existing measurement genuinely cannot expose the requested behavior.",

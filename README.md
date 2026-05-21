@@ -339,7 +339,7 @@ npm run run
 /whatnow
 ```
 
-cycle이 끝날 때 보내는 Telegram 보고는 cycle 로그 파일을 읽어서 한국어 상태, 작업 요약, 검증, 커밋만 짧은 한 줄로 보냅니다.
+cycle이 끝날 때 보내는 Telegram 보고는 cycle 로그 파일을 읽어서 한국어 상태, 개발 내용, 검증, 커밋만 짧은 한 줄로 보냅니다. `Workspace is clean` 같은 상태 문구는 개발 내용 요약에서 제외합니다.
 
 긴 cycle이 진행 중일 때 현재 무엇을 하는지 바로 보려면 다음 명령을 보냅니다.
 

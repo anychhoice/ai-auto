@@ -67,6 +67,7 @@ test("codex planner prompt makes the latest session instruction highest priority
   );
 
   assert.match(prompt, /latestSessionInstruction is the highest-priority live operator instruction/);
+  assert.match(prompt, /cycleSummary must be Korean/);
   assert.match(prompt, /Check \/v2 routing and deploy pending changes/);
 });
 

@@ -46,6 +46,16 @@ function summarizeResults(results) {
   return results.map((result) => summarizeCommandResult(result)).join("\n\n");
 }
 
+function planningProgressDetail(config, context) {
+  if (context.latestSessionInstruction) {
+    return `최신 지시를 어떻게 구현할지 계획 중입니다: ${context.latestSessionInstruction}`;
+  }
+  if (context.operatorInstruction) {
+    return `설정 지시를 어떻게 구현할지 계획 중입니다: ${context.operatorInstruction}`;
+  }
+  return "프로젝트 구조, 최근 로그, 테스트 결과를 바탕으로 다음에 개발할 항목을 고르는 중입니다.";
+}
+
 function buildImplementationPrompt(
   config,
   plan,
@@ -64,6 +74,7 @@ function buildImplementationPrompt(
     latestSessionInstruction
       ? "The latest live operator instruction below overrides older mission/backlog work and any conflicting planner details. Satisfy it first, or verify with concrete evidence that it is already satisfied or blocked."
       : "",
+    "When you finish, summarize in Korean what you developed or verified. Do not report only that the workspace or repository is clean.",
     "Run or update tests when useful. Do not deploy. Do not modify secrets.",
     testPolicy,
     "In normal cycles, make a concrete reviewable file change. Only make no code changes if the task is already fully satisfied or a safety issue blocks changes, and explain that clearly.",
@@ -96,6 +107,7 @@ function buildRepairPrompt(
     latestSessionInstruction
       ? "Keep the latest live operator instruction as the highest-priority acceptance target while repairing the failure."
       : "",
+    "When you finish, summarize in Korean what you developed or verified. Do not report only that the workspace or repository is clean.",
     testPolicy,
     "Do not deploy. Do not modify secrets.",
     "",
@@ -181,7 +193,7 @@ export function prioritizeLatestInstruction(plan, latestSessionInstruction) {
     ...plan,
     shouldModify: true,
     cycleSummary: [
-      `Latest operator instruction: ${instruction}`,
+      `최신 지시: ${instruction}`,
       "",
       plan.cycleSummary
     ].join("\n"),
@@ -242,7 +254,7 @@ export async function runCycle(config, logger = console, options = {}) {
   recordProgress(config, logger, {
     phase: "planning",
     phaseLabel: "계획 수립 중",
-    detail: `${plannerMode(config)} planner가 최신 지시와 현재 로그를 보고 이번 cycle 작업을 고르는 중입니다.`
+    detail: planningProgressDetail(config, context)
   });
   const planning = await createCyclePlan(config, context, "", { signal: forceSignal });
   const plan = prioritizeLatestInstruction(planning.plan, context.latestSessionInstruction);
@@ -250,7 +262,7 @@ export async function runCycle(config, logger = console, options = {}) {
   recordProgress(config, logger, {
     phase: "plan_ready",
     phaseLabel: "계획 완료",
-    detail: plan.cycleSummary || plan.codexPrompt || "",
+    detail: `이번 계획: ${plan.cycleSummary || plan.codexPrompt || ""}`,
     planSummary: plan.cycleSummary || "",
     shouldModify: plan.shouldModify
   });
@@ -386,7 +398,7 @@ export async function runCycle(config, logger = console, options = {}) {
       running: true,
       phase: "implementation",
       phaseLabel: `Codex 구현 중 (${attempt}/${config.maxIterationsPerCycle})`,
-      detail: plan.codexPrompt || plan.cycleSummary || "",
+      detail: plan.cycleSummary || plan.codexPrompt || "",
       attemptNumber: attempt
     });
     const codexResult = await runCodex(config, prompt, { signal: forceSignal });
