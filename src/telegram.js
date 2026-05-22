@@ -36,6 +36,23 @@ function compactLine(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+export function classifyTelegramPollingError(error) {
+  const message = `${error?.message || ""} ${error?.cause?.code || ""} ${error?.cause?.message || ""}`;
+  if (/terminated by other getUpdates request|Conflict/i.test(message)) {
+    return "중복 polling";
+  }
+  if (/webhook/i.test(message)) {
+    return "webhook 충돌";
+  }
+  if (/Unauthorized|Not Found/i.test(message)) {
+    return "봇 토큰 오류";
+  }
+  if (/fetch failed|ETIMEDOUT|EHOSTUNREACH|ECONNRESET|ENOTFOUND|network/i.test(message)) {
+    return "네트워크 오류";
+  }
+  return "polling 오류";
+}
+
 function outcomeLabel(outcome) {
   const labels = {
     verified: "완료",
@@ -365,18 +382,23 @@ export async function runTelegramCommandLoop(config, logger = console, options =
 
   let offset = readOffset(config);
   let retryDelayMs = 1_000;
+  const getUpdatesFn = options.getUpdates || getUpdates;
+  const sleepFn = options.sleep || sleep;
   logger.log("[ai-auto] Telegram command loop started. Send /whatnow or /instruct to the bot.");
 
   while (!signal?.aborted) {
     let updates;
     try {
-      updates = await getUpdates(config, offset, signal);
+      updates = await getUpdatesFn(config, offset, signal);
     } catch (error) {
       if (signal?.aborted || isAbortError(error)) {
         return;
       }
-      logger.error(`[ai-auto] Telegram polling failed: ${error.message}. Retrying in ${Math.round(retryDelayMs / 1000)}s.`);
-      await sleep(retryDelayMs, signal);
+      const kind = classifyTelegramPollingError(error);
+      logger.error(
+        `[ai-auto] Telegram polling failed (${kind}): ${error.message}. Retrying in ${Math.round(retryDelayMs / 1000)}s.`
+      );
+      await sleepFn(retryDelayMs, signal);
       retryDelayMs = Math.min(retryDelayMs * 2, 60_000);
       continue;
     }

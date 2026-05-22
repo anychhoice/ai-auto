@@ -10,6 +10,8 @@ import { runCommand } from "./shell.js";
 import { createShutdownController } from "./shutdown.js";
 import { runTelegramCommandLoop, telegramCommandsEnabled } from "./telegram.js";
 
+let activeTelegramCommands = null;
+
 function parseArgs(argv) {
   const args = [...argv];
   const command = args.shift() || "once";
@@ -159,12 +161,13 @@ function startInteractiveInstructionInput(config, shutdown) {
   return rl;
 }
 
-function startEmbeddedTelegramCommands(config, logger = console) {
+function startEmbeddedTelegramCommands(config, logger = console, options = {}) {
   if (!telegramCommandsEnabled(config)) {
     return { stop: async () => {} };
   }
 
   const controller = new AbortController();
+  let stopped = false;
   const loop = runTelegramCommandLoop(config, logger, { signal: controller.signal }).catch(
     (error) => {
       if (!controller.signal.aborted) {
@@ -173,11 +176,20 @@ function startEmbeddedTelegramCommands(config, logger = console) {
     }
   );
 
-  return {
-    stop: async () => {
-      controller.abort();
-      await loop;
+  const stop = async () => {
+    if (stopped) {
+      return;
     }
+    stopped = true;
+    controller.abort();
+    options.stopSignal?.removeEventListener("abort", stop);
+    await loop;
+  };
+
+  options.stopSignal?.addEventListener("abort", stop, { once: true });
+
+  return {
+    stop
   };
 }
 
@@ -241,11 +253,15 @@ async function main() {
     const shutdown = createShutdownController();
     const runState = prepareRunSession(config);
     const instructionInput = startInteractiveInstructionInput(config, shutdown);
-    const telegramCommands = startEmbeddedTelegramCommands(config);
+    const telegramCommands = startEmbeddedTelegramCommands(config, console, {
+      stopSignal: shutdown.forceSignal
+    });
+    activeTelegramCommands = telegramCommands;
     try {
       await runLoop(config, console, { shutdown, runState });
     } finally {
       await telegramCommands.stop();
+      activeTelegramCommands = null;
       instructionInput?.close();
       shutdown.dispose();
     }
@@ -259,7 +275,12 @@ async function main() {
   process.exitCode = 1;
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
+  try {
+    await activeTelegramCommands?.stop?.();
+  } catch (stopError) {
+    console.error(`[ai-auto] failed to stop Telegram command loop: ${stopError.message}`);
+  }
   console.error(error.stack || error.message);
   process.exitCode = 1;
 });

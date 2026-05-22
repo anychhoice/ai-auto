@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  classifyTelegramPollingError,
   formatTelegramCycleReport,
   parseTelegramCommand,
   telegramCommandsEnabled,
@@ -33,6 +34,18 @@ test("parseTelegramCommand supports bot suffix and multiline args", () => {
     args: "first line\nsecond line"
   });
   assert.deepEqual(parseTelegramCommand("plain text"), { command: "", args: "" });
+});
+
+test("classifyTelegramPollingError names common polling failures", () => {
+  assert.equal(
+    classifyTelegramPollingError(new Error("Conflict: terminated by other getUpdates request")),
+    "중복 polling"
+  );
+  assert.equal(
+    classifyTelegramPollingError(new TypeError("fetch failed", { cause: { code: "ETIMEDOUT" } })),
+    "네트워크 오류"
+  );
+  assert.equal(classifyTelegramPollingError(new Error("Unauthorized")), "봇 토큰 오류");
 });
 
 test("formatTelegramCycleReport reads cycle log details", () => {
