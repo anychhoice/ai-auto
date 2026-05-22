@@ -286,89 +286,92 @@ npm run clear-instructions
 
 주의할 점이 하나 있습니다. 이미 실행 중인 `codex exec` 프로세스 내부에 실시간으로 메시지를 꽂아 넣는 것은 아닙니다. 대신 현재 Codex 작업이 끝난 뒤 다음 계획, 다음 수정 시도, 다음 cycle에 자연스럽게 반영됩니다.
 
-## 텔레그램 보고와 `/whatnow`
+## Slack 보고와 원격 명령
 
-Telegram Bot API를 사용해서 cycle 종료 결과를 텔레그램으로 받을 수 있습니다. 기본값은 꺼져 있습니다.
+회사 네트워크에서 Telegram이 막히는 경우 Slack Socket Mode로 cycle 종료 보고와 원격 명령을 받을 수 있습니다. 기본값은 꺼져 있고, 지금 로컬 설정 예시는 Telegram을 끄고 Slack을 켜는 형태입니다.
 
-`.env`에 봇 토큰과 채팅 ID를 넣습니다.
+Slack 앱에서 필요한 값은 세 가지입니다.
+
+```bash
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_APP_TOKEN=xapp-your-app-level-token
+SLACK_CHANNEL_ID=C0123456789
+```
+
+- `SLACK_BOT_TOKEN`: Bot User OAuth Token입니다. 최소 `chat:write` 권한이 필요합니다. 앱 멘션을 받으려면 `app_mentions:read`, DM 메시지를 받으려면 `im:history`도 추가합니다.
+- `SLACK_APP_TOKEN`: Socket Mode용 app-level token입니다. `connections:write` scope가 필요합니다.
+- `SLACK_CHANNEL_ID`: cycle 종료 보고를 받을 채널 ID입니다.
+
+Slack 앱 설정에서는 Socket Mode를 켜고, Event Subscriptions에 `app_mention` 또는 `message.im`을 추가한 뒤 앱을 보고받을 채널에 초대합니다. 명령은 Socket Mode 이벤트로 받으므로 공개 URL이나 별도 서버는 필요 없습니다.
+
+`config/ai-auto.json`에서 Slack을 켭니다.
+
+```json
+{
+  "telegram": {
+    "enabled": false
+  },
+  "slack": {
+    "enabled": true,
+    "reportCycles": true,
+    "commands": {
+      "enabled": true,
+      "allowedUserIds": [],
+      "allowedChannelIds": []
+    }
+  }
+}
+```
+
+이제 `npm run run` 하나를 실행하면 runner cycle과 Slack command loop가 같은 프로세스 안에서 함께 동작합니다.
+
+```bash
+npm run run
+```
+
+cycle이 끝날 때 보내는 Slack 보고는 cycle 로그 파일을 읽어서 한국어 상태, 개발 내용, 검증, 커밋만 짧은 한 줄로 보냅니다. `Workspace is clean` 같은 상태 문구는 개발 내용 요약에서 제외합니다.
+
+Slack에서 사용할 수 있는 명령은 다음과 같습니다.
+
+- `whatnow`: 현재 실행 누적 요약
+- `status` 또는 `now`: 진행 중인 cycle 상태 즉시 확인
+- `instruct 자연어 지시`: 실행 중인 세션에 지시 추가
+- `show`: 현재 활성 지시 확인
+- `clear`: 활성 지시 정리
+- `help`: 명령 목록 표시
+
+앱 멘션도 지원합니다.
+
+```text
+@ai-auto whatnow
+@ai-auto instruct MusicXML 변환 오류를 먼저 고치고, 테스트로 재현해.
+```
+
+Slash command를 쓰고 싶다면 Slack 앱에 `/ai-auto`를 등록한 뒤 `whatnow`, `status`, `instruct ...`를 인자로 보내면 됩니다.
+
+```text
+/ai-auto whatnow
+/ai-auto instruct v2 benchmark부터 확인해.
+```
+
+`commands.allowedUserIds`가 비어 있으면 모든 Slack 사용자의 명령을 허용합니다. 특정 사용자만 허용하려면 Slack user id를 배열에 넣습니다. `commands.allowedChannelIds`가 비어 있으면 모든 채널/DM 명령을 허용하고, 특정 채널만 허용하려면 Slack channel id를 배열에 넣습니다.
+
+`npm run slack`은 runner 없이 Slack 명령만 standalone Socket Mode로 받을 때 쓰는 명령입니다. 보통은 `npm run run` 하나만 켜면 됩니다.
+
+## Telegram 보고와 원격 명령
+
+Telegram Bot API 연동도 남아 있지만, Telegram이 막힌 환경에서는 `telegram.enabled`를 `false`로 두고 Slack을 쓰는 편이 낫습니다.
+
+Telegram을 계속 쓰려면 `.env`에 봇 토큰과 채팅 ID를 넣습니다.
 
 ```bash
 TELEGRAM_BOT_TOKEN=123456:your-bot-token
 TELEGRAM_CHAT_ID=123456789
 ```
 
-`config/ai-auto.json`에서 텔레그램 보고를 켭니다.
+Telegram에서 사용할 수 있는 명령은 `/whatnow`, `/status`, `/now`, `/instruct`, `/show`, `/clear`, `/help`, `/start`입니다. `npm run telegram`은 runner 없이 Telegram 명령만 standalone long polling으로 받습니다.
 
-```json
-{
-  "telegram": {
-    "enabled": true,
-    "reportCycles": true,
-    "commands": {
-      "enabled": false
-    }
-  }
-}
-```
-
-이렇게 하면 `npm run run`이 각 cycle을 끝낼 때 텔레그램으로 짧은 결과를 보냅니다.
-
-텔레그램에서 `/whatnow`를 호출하려면 command polling도 켭니다.
-
-```json
-{
-  "telegram": {
-    "enabled": true,
-    "commands": {
-      "enabled": true,
-      "allowedChatIds": []
-    }
-  }
-}
-```
-
-이제 `npm run run` 하나를 실행하면 runner cycle과 Telegram command polling이 같은 프로세스 안에서 함께 동작합니다.
-
-```bash
-npm run run
-```
-
-이후 봇에게 다음 메시지를 보내면 현재 누적 실행 결과를 한글로 답장합니다.
-
-```text
-/whatnow
-```
-
-cycle이 끝날 때 보내는 Telegram 보고는 cycle 로그 파일을 읽어서 한국어 상태, 개발 내용, 검증, 커밋만 짧은 한 줄로 보냅니다. `Workspace is clean` 같은 상태 문구는 개발 내용 요약에서 제외합니다.
-
-긴 cycle이 진행 중일 때 현재 무엇을 하는지 바로 보려면 다음 명령을 보냅니다.
-
-```text
-/status
-```
-
-`/now`도 같은 명령입니다.
-
-실행 중인 세션에 원격 지시를 추가하려면 다음처럼 보냅니다.
-
-```text
-/instruct MusicXML 변환 오류를 먼저 고치고, 테스트로 재현해.
-```
-
-cycle이 성공한 뒤에는 read-only planner가 해당 지시가 실제로 이행됐는지 다시 검증합니다. planner가 이행됐다고 판정하고, cycle 중 새 지시가 추가되지 않았을 때만 활성 지시 파일을 archive로 옮겨 자동 정리합니다. 아직 이행되지 않았다고 판정하면 대기하지 않고 다음 cycle을 바로 시작합니다.
-
-Telegram에서 사용할 수 있는 명령은 다음과 같습니다.
-
-- `/whatnow`: 현재 실행 누적 요약
-- `/status` 또는 `/now`: 진행 중인 cycle 상태 즉시 확인
-- `/instruct 자연어 지시`: 실행 중인 세션에 지시 추가
-- `/show`: 현재 활성 지시 확인
-- `/clear`: 활성 지시 정리
-- `/help` 또는 `/start`: 명령 목록 표시
-
-`allowedChatIds`가 비어 있으면 `TELEGRAM_CHAT_ID` 또는 `telegram.chatId`만 허용됩니다. 여러 채팅에서 쓰려면 허용할 chat id를 배열에 넣습니다.
-
-`npm run telegram`은 runner 없이 Telegram 명령만 따로 받을 때 쓰는 standalone 명령입니다. 보통은 `npm run run` 하나만 켜면 됩니다.
+cycle이 성공한 뒤에는 read-only planner가 원격 지시가 실제로 이행됐는지 다시 검증합니다. planner가 이행됐다고 판정하고, cycle 중 새 지시가 추가되지 않았을 때만 활성 지시 파일을 archive로 옮겨 자동 정리합니다. 아직 이행되지 않았다고 판정하면 대기하지 않고 다음 cycle을 바로 시작합니다.
 
 ## 주요 설정
 
@@ -742,6 +745,40 @@ Telegram 연동 설정입니다.
 - `commands.allowedChatIds`: 명령을 허용할 chat id 목록
 - `commands.stateFile`: Telegram `getUpdates` offset 저장 파일
 
+### slack
+
+```json
+{
+  "slack": {
+    "enabled": false,
+    "botTokenEnv": "SLACK_BOT_TOKEN",
+    "appTokenEnv": "SLACK_APP_TOKEN",
+    "channelIdEnv": "SLACK_CHANNEL_ID",
+    "channelId": "",
+    "reportCycles": true,
+    "commands": {
+      "enabled": false,
+      "allowedUserIds": [],
+      "allowedChannelIds": [],
+      "reconnectDelaySeconds": 5
+    }
+  }
+}
+```
+
+Slack 연동 설정입니다.
+
+- `enabled`: Slack 기능 전체 on/off
+- `botTokenEnv`: Bot User OAuth Token을 읽을 환경변수 이름
+- `appTokenEnv`: Socket Mode app-level token을 읽을 환경변수 이름
+- `channelIdEnv`: cycle 보고를 보낼 기본 channel id 환경변수 이름
+- `channelId`: 환경변수 대신 직접 지정할 기본 channel id
+- `reportCycles`: cycle 종료 보고 여부
+- `commands.enabled`: `whatnow`, `status`, `now`, `instruct`, `show`, `clear` Socket Mode 명령 사용 여부
+- `commands.allowedUserIds`: 명령을 허용할 Slack user id 목록. 비어 있으면 모든 사용자를 허용합니다.
+- `commands.allowedChannelIds`: 명령을 허용할 Slack channel id 목록. 비어 있으면 모든 채널/DM을 허용합니다.
+- `commands.reconnectDelaySeconds`: Socket Mode 연결이 끊겼을 때 재연결 전 대기 시간
+
 ### progress
 
 ```json
@@ -817,7 +854,13 @@ npm run once
 npm run run
 ```
 
-설정된 시간 동안 반복 실행합니다. 기본 예시는 24시간입니다. `telegram.commands.enabled`가 true이면 같은 프로세스에서 Telegram `/whatnow`, `/status`, `/now`, `/instruct`, `/show`, `/clear` 명령도 함께 받습니다.
+설정된 시간 동안 반복 실행합니다. 기본 예시는 24시간입니다. `slack.commands.enabled` 또는 `telegram.commands.enabled`가 true이면 같은 프로세스에서 원격 명령도 함께 받습니다.
+
+```bash
+npm run slack
+```
+
+runner 없이 Slack 명령만 standalone Socket Mode로 받습니다.
 
 ```bash
 npm run telegram

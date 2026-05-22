@@ -70,6 +70,20 @@ export const DEFAULT_CONFIG = {
       stateFile: ".ai-auto/telegram-offset.json"
     }
   },
+  slack: {
+    enabled: false,
+    botTokenEnv: "SLACK_BOT_TOKEN",
+    appTokenEnv: "SLACK_APP_TOKEN",
+    channelIdEnv: "SLACK_CHANNEL_ID",
+    channelId: "",
+    reportCycles: true,
+    commands: {
+      enabled: false,
+      allowedUserIds: [],
+      allowedChannelIds: [],
+      reconnectDelaySeconds: 5
+    }
+  },
   mission:
     "Actively improve the target project every cycle. First understand the architecture, tests, risks, and improvement opportunities, then make one concrete, small, tested, reviewable code or test change. Avoid no-op analysis cycles unless the workspace is already cleanly complete or a safety concern blocks changes. Never change secrets, credentials, or deployment configuration unless explicitly requested."
 };

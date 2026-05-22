@@ -12,6 +12,7 @@ import {
 import { createCyclePlan, verifyInstructionFulfillment } from "./planner.js";
 import { writeRunProgress } from "./progress.js";
 import { runCommand, runCommandList, summarizeCommandResult } from "./shell.js";
+import { sendSlackCycleReport } from "./slack.js";
 import { sendTelegramCycleReport } from "./telegram.js";
 import { commitAll, getWorkspaceContext, isGitClean } from "./workspace.js";
 
@@ -679,6 +680,11 @@ export async function runLoop(config, logger = console, options = {}) {
       await sendTelegramCycleReport(config, result);
     } catch (error) {
       logger.error(`[ai-auto] Telegram report failed: ${error.message}`);
+    }
+    try {
+      await sendSlackCycleReport(config, result);
+    } catch (error) {
+      logger.error(`[ai-auto] Slack report failed: ${error.message}`);
     }
 
     if (options.shutdown?.gracefulRequested || result.outcome === "force_shutdown") {

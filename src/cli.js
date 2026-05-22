@@ -8,9 +8,10 @@ import { runCycle, runLoop } from "./orchestrator.js";
 import { prepareRunSession } from "./runState.js";
 import { runCommand } from "./shell.js";
 import { createShutdownController } from "./shutdown.js";
+import { runSlackCommandLoop, slackCommandsEnabled } from "./slack.js";
 import { runTelegramCommandLoop, telegramCommandsEnabled } from "./telegram.js";
 
-let activeTelegramCommands = null;
+let activeCommandLoops = null;
 
 function parseArgs(argv) {
   const args = [...argv];
@@ -161,20 +162,18 @@ function startInteractiveInstructionInput(config, shutdown) {
   return rl;
 }
 
-function startEmbeddedTelegramCommands(config, logger = console, options = {}) {
-  if (!telegramCommandsEnabled(config)) {
+function startManagedCommandLoop(name, enabled, runLoop, logger = console, options = {}) {
+  if (!enabled) {
     return { stop: async () => {} };
   }
 
   const controller = new AbortController();
   let stopped = false;
-  const loop = runTelegramCommandLoop(config, logger, { signal: controller.signal }).catch(
-    (error) => {
-      if (!controller.signal.aborted) {
-        logger.error(`[ai-auto] Telegram command loop stopped: ${error.message}`);
-      }
+  const loop = runLoop(controller.signal).catch((error) => {
+    if (!controller.signal.aborted) {
+      logger.error(`[ai-auto] ${name} command loop stopped: ${error.message}`);
     }
-  );
+  });
 
   const stop = async () => {
     if (stopped) {
@@ -190,6 +189,35 @@ function startEmbeddedTelegramCommands(config, logger = console, options = {}) {
 
   return {
     stop
+  };
+}
+
+function startEmbeddedCommandLoops(config, logger = console, options = {}) {
+  const loops = [
+    startManagedCommandLoop(
+      "Telegram",
+      telegramCommandsEnabled(config),
+      (signal) => runTelegramCommandLoop(config, logger, { signal }),
+      logger,
+      options
+    ),
+    startManagedCommandLoop(
+      "Slack",
+      slackCommandsEnabled(config),
+      (signal) => runSlackCommandLoop(config, logger, { signal }),
+      logger,
+      options
+    )
+  ];
+
+  return {
+    stop: async () => {
+      const results = await Promise.allSettled(loops.map((loop) => loop.stop()));
+      const rejected = results.find((result) => result.status === "rejected");
+      if (rejected) {
+        throw rejected.reason;
+      }
+    }
   };
 }
 
@@ -253,15 +281,15 @@ async function main() {
     const shutdown = createShutdownController();
     const runState = prepareRunSession(config);
     const instructionInput = startInteractiveInstructionInput(config, shutdown);
-    const telegramCommands = startEmbeddedTelegramCommands(config, console, {
+    const commandLoops = startEmbeddedCommandLoops(config, console, {
       stopSignal: shutdown.forceSignal
     });
-    activeTelegramCommands = telegramCommands;
+    activeCommandLoops = commandLoops;
     try {
       await runLoop(config, console, { shutdown, runState });
     } finally {
-      await telegramCommands.stop();
-      activeTelegramCommands = null;
+      await commandLoops.stop();
+      activeCommandLoops = null;
       instructionInput?.close();
       shutdown.dispose();
     }
@@ -277,9 +305,9 @@ async function main() {
 
 main().catch(async (error) => {
   try {
-    await activeTelegramCommands?.stop?.();
+    await activeCommandLoops?.stop?.();
   } catch (stopError) {
-    console.error(`[ai-auto] failed to stop Telegram command loop: ${stopError.message}`);
+    console.error(`[ai-auto] failed to stop remote command loop: ${stopError.message}`);
   }
   console.error(error.stack || error.message);
   process.exitCode = 1;

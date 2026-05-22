@@ -15,9 +15,10 @@
     "once": "node src/cli.js once",
     "run": "node src/cli.js run",
     "telegram": "node scripts/telegram-bot.js",
+    "slack": "node scripts/slack-bot.js",
     "what-now": "node scripts/what-now.js",
     "test": "node --test",
-    "check": "node --check src/cli.js && node --check src/config.js && node --check src/codex.js && node --check src/consultation.js && node --check src/detectCommands.js && node --check src/instructions.js && node --check src/openai.js && node --check src/orchestrator.js && node --check src/planner.js && node --check src/progress.js && node --check src/runState.js && node --check src/shell.js && node --check src/shutdown.js && node --check src/statusSummary.js && node --check src/telegram.js && node --check src/workspace.js && node --check scripts/what-now.js && node --check scripts/telegram-bot.js"
+    "check": "node --check src/cli.js && node --check src/config.js && node --check src/codex.js && node --check src/consultation.js && node --check src/detectCommands.js && node --check src/instructions.js && node --check src/openai.js && node --check src/orchestrator.js && node --check src/planner.js && node --check src/progress.js && node --check src/runState.js && node --check src/shell.js && node --check src/shutdown.js && node --check src/slack.js && node --check src/statusSummary.js && node --check src/telegram.js && node --check src/workspace.js && node --check scripts/what-now.js && node --check scripts/slack-bot.js && node --check scripts/telegram-bot.js"
   },
   "engines": {
     "node": ">=20"
