@@ -53,7 +53,10 @@ test("codex planner prompt makes the latest session instruction highest priority
   const prompt = buildCodexPlannerPrompt(
     { workspace: "/tmp/project", commands: { test: [], verify: [] } },
     {
+      goals: ["Improve v2 transcription accuracy."],
+      rules: ["Never modify secrets."],
       mission: "Improve the project continuously.",
+      configInstructionText: "Goals:\n1. Improve v2 transcription accuracy.\n\nMust-follow rules:\n1. Never modify secrets.",
       operatorInstruction: "",
       runState: null,
       latestSessionInstruction: "Check /v2 routing and deploy pending changes.",
@@ -67,6 +70,8 @@ test("codex planner prompt makes the latest session instruction highest priority
   );
 
   assert.match(prompt, /latestSessionInstruction is the highest-priority live operator instruction/);
+  assert.match(prompt, /goals are desired outcomes\. rules are mandatory constraints/i);
+  assert.match(prompt, /Never modify secrets/);
   assert.match(prompt, /cycleSummary must be Korean/);
   assert.match(prompt, /Check \/v2 routing and deploy pending changes/);
 });

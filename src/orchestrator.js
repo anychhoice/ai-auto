@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { consultCodex } from "./consultation.js";
+import { buildConfigInstructionContext } from "./config.js";
 import { runCodex } from "./codex.js";
 import { detectProjectCommands, resolveVerificationCommands } from "./detectCommands.js";
 import {
@@ -54,6 +55,9 @@ function planningProgressDetail(config, context) {
   if (context.operatorInstruction) {
     return `설정 지시를 어떻게 구현할지 계획 중입니다: ${context.operatorInstruction}`;
   }
+  if (context.goals?.length) {
+    return `설정 목표를 어떻게 달성할지 계획 중입니다: ${context.goals[0]}`;
+  }
   return "프로젝트 구조, 최근 로그, 테스트 결과를 바탕으로 다음에 개발할 항목을 고르는 중입니다.";
 }
 
@@ -66,6 +70,7 @@ function buildImplementationPrompt(
   latestSessionInstruction,
   testPolicy
 ) {
+  const configInstructionContext = buildConfigInstructionContext(config);
   return [
     "You are Codex running inside an unattended local automation loop.",
     `Workspace: ${config.workspace}`,
@@ -75,6 +80,9 @@ function buildImplementationPrompt(
     latestSessionInstruction
       ? "The latest live operator instruction below overrides older mission/backlog work and any conflicting planner details. Satisfy it first, or verify with concrete evidence that it is already satisfied or blocked."
       : "",
+    configInstructionContext.rules.length
+      ? "The config rules below are mandatory constraints. Do not violate them to satisfy goals, mission, or backlog work."
+      : "",
     "When you finish, summarize in Korean what you developed or verified. Do not report only that the workspace or repository is clean.",
     "Run or update tests when useful. Do not deploy. Do not modify secrets.",
     testPolicy,
@@ -82,6 +90,7 @@ function buildImplementationPrompt(
     "",
     `Attempt: ${attemptNumber}`,
     latestSessionInstruction ? `Latest live operator instruction:\n${latestSessionInstruction}` : "",
+    configInstructionContext.text ? `Config goals, mission, and must-follow rules:\n${configInstructionContext.text}` : "",
     sessionInstructions ? `Active natural-language session instructions:\n${sessionInstructions}` : "",
     previousFailure ? `Previous failure:\n${previousFailure}` : "",
     "",
@@ -101,6 +110,7 @@ function buildRepairPrompt(
   latestSessionInstruction,
   testPolicy
 ) {
+  const configInstructionContext = buildConfigInstructionContext(config);
   return [
     "The previous implementation failed verification.",
     `Workspace: ${config.workspace}`,
@@ -108,12 +118,16 @@ function buildRepairPrompt(
     latestSessionInstruction
       ? "Keep the latest live operator instruction as the highest-priority acceptance target while repairing the failure."
       : "",
+    configInstructionContext.rules.length
+      ? "The config rules below are mandatory constraints. Do not violate them while repairing the failure."
+      : "",
     "When you finish, summarize in Korean what you developed or verified. Do not report only that the workspace or repository is clean.",
     testPolicy,
     "Do not deploy. Do not modify secrets.",
     "",
     `Attempt: ${attemptNumber}`,
     latestSessionInstruction ? `Latest live operator instruction:\n${latestSessionInstruction}` : "",
+    configInstructionContext.text ? `Config goals, mission, and must-follow rules:\n${configInstructionContext.text}` : "",
     sessionInstructions ? `Active natural-language session instructions:\n${sessionInstructions}` : "",
     "",
     "Original plan:",
@@ -294,6 +308,9 @@ export async function runCycle(config, logger = console, options = {}) {
 
   const cycleLog = {
     startedAt: new Date().toISOString(),
+    configGoalsAtPlan: context.goals || [],
+    configRulesAtPlan: context.rules || [],
+    configInstructionTextAtPlan: context.configInstructionText || "",
     sessionInstructionsAtPlan: context.sessionInstructions,
     latestSessionInstructionAtPlan: context.latestSessionInstruction,
     instructionRevisionAtPlan,

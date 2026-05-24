@@ -235,7 +235,7 @@ npm run run
 
 이전 실행의 마지막 cycle 로그에 남은 자동 커밋이 현재 Git `HEAD`와 같으면, runner는 그 커밋을 이미 완료된 기준점으로 기록하고 다음 cycle을 이어서 계획합니다.
 
-단, `config/ai-auto.json`의 `mission` 또는 `operatorInstruction`에 사용자가 새 지시를 넣은 것이 감지되면 그 지시가 이어가기 정보보다 우선합니다.
+단, `config/ai-auto.json`의 `goals`, `rules`, `mission`, `operatorInstruction`에 사용자가 새 지시를 넣은 것이 감지되면 그 지시가 이어가기 정보보다 우선합니다.
 
 ## 실행 중 자연어로 지시하기
 
@@ -658,6 +658,34 @@ git commit -m "..."
 
 재시작할 때 이전 실행의 값과 달라졌다면 새 지시로 감지하고, 이전 로그나 이어가기 커밋보다 우선합니다.
 
+### goals
+
+```json
+{
+  "goals": [
+    "v2 실제 원곡 benchmark asset을 repo에 고정한다.",
+    "MusicXML/PDF validation을 통과시킨다.",
+    "v2 전사 정확도 before/after 지표를 개선한다."
+  ]
+}
+```
+
+AI Auto가 장기적으로 달성해야 할 목표 목록입니다. 목표는 원하는 결과를 적는 곳입니다. 여러 목표가 있으면 배열로 나눠 쓰는 편이 planner가 우선순위를 잡기 좋습니다.
+
+### rules
+
+```json
+{
+  "rules": [
+    "secrets, .env, 임시 output은 계속 ignore한다.",
+    "MusicXML/PDF validation이 깨지면 품질 튜닝보다 먼저 고친다.",
+    "변경사항은 커밋하고 git push한다."
+  ]
+}
+```
+
+AI Auto가 목표를 수행하는 동안 반드시 지켜야 할 규칙입니다. planner와 Codex worker에게 `rules`는 목표보다 강한 제약으로 전달됩니다. 즉, 목표를 달성하려고 규칙을 어기는 계획은 세우지 않도록 지시됩니다.
+
 ### restart
 
 ```json
@@ -795,21 +823,29 @@ Slack 연동 설정입니다.
 
 ```json
 {
-  "mission": "First understand the target project, identify its architecture, tests, risks, and improvement opportunities..."
+  "mission": ""
 }
 ```
 
-AI에게 주는 장기 목표입니다.
+이전 버전과의 호환을 위한 legacy 장기 지시 필드입니다.
 
-짧은 기간만 적용할 새 지시는 `operatorInstruction`에 넣는 편이 더 명확합니다.
+새 설정에서는 장기 목표는 `goals`, 반드시 지켜야 할 제약은 `rules`, 짧은 기간만 적용할 새 지시는 `operatorInstruction`에 넣는 편이 더 명확합니다.
 
-기본 mission은 처음부터 코드를 크게 바꾸라는 지시가 아닙니다. 먼저 대상 프로젝트를 파악하고, 구조와 테스트와 위험 지점을 살펴본 뒤, 작고 검증 가능한 개선점을 하나 선택하도록 되어 있습니다.
+기존처럼 `mission`에 문자열을 넣어도 계속 동작합니다. 다만 목표와 규칙을 한 문장에 섞어 쓰면 planner가 무엇을 성취해야 하는지와 무엇을 절대 어기면 안 되는지 구분하기 어렵습니다.
 
 예시:
 
 ```json
 {
-  "mission": "먼저 Next.js 앱의 구조, 테스트, 빌드 흐름을 파악하고 개선점을 찾는다. 이후 테스트 가능한 작은 개선을 하나씩 수행한다."
+  "goals": [
+    "먼저 Next.js 앱의 구조, 테스트, 빌드 흐름을 파악하고 개선점을 찾는다.",
+    "이후 테스트 가능한 작은 개선을 하나씩 수행한다."
+  ],
+  "rules": [
+    "secrets와 배포 설정은 명시 지시 없이는 수정하지 않는다.",
+    "테스트가 없으면 먼저 최소 테스트 셋업을 만든다."
+  ],
+  "mission": ""
 }
 ```
 
@@ -966,7 +1002,15 @@ Next.js 프로젝트를 `../my-next-app`에서 관리한다고 가정하면:
     "command": "",
     "requireCleanGit": true
   },
-  "mission": "먼저 Next.js 앱의 구조, 테스트, 빌드 흐름을 파악하고 개선점을 찾는다. 이후 테스트 가능한 작은 개선을 하나씩 수행한다."
+  "goals": [
+    "먼저 Next.js 앱의 구조, 테스트, 빌드 흐름을 파악하고 개선점을 찾는다.",
+    "이후 테스트 가능한 작은 개선을 하나씩 수행한다."
+  ],
+  "rules": [
+    "secrets와 배포 설정은 명시 지시 없이는 수정하지 않는다.",
+    "테스트가 없으면 먼저 최소 테스트 셋업을 만든다."
+  ],
+  "mission": ""
 }
 ```
 

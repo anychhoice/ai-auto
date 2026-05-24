@@ -206,6 +206,7 @@ export function buildCodexPlannerPrompt(config, context, previousFailure = "") {
     "- Do not replace latestSessionInstruction with general backlog, benchmark, refactor, or inferred continuation work unless that work is necessary to satisfy the latest instruction.",
     "- Older active session instructions are context; the newest instruction wins when there is tension.",
     "- Current config instructions and active session instructions are direct operator intent.",
+    "- goals are desired outcomes. rules are mandatory constraints. Never violate rules to chase goals, mission, or backlog work.",
     "- If newConfigInstruction is present, it has priority over resume state and inferred continuation work.",
     "- If resumedFromCommit is present, treat that commit as already completed and do not repeat it.",
     "- Default to shouldModify=true unless the workspace is blocked or already complete.",
@@ -224,7 +225,10 @@ export function buildCodexPlannerPrompt(config, context, previousFailure = "") {
     "Current orchestration context:",
     JSON.stringify(
       {
+        goals: context.goals || [],
+        rules: context.rules || [],
         mission: context.mission,
+        configInstructionText: context.configInstructionText || "",
         operatorInstruction: context.operatorInstruction,
         newConfigInstruction: context.runState?.newConfigInstruction || null,
         resumedFromCommit: context.runState?.resumedFromCommit || null,

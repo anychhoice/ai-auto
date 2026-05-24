@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { buildConfigInstructionSnapshot } from "./config.js";
 
 function timestamp() {
   return new Date().toISOString().replace(/[:.]/g, "-");
@@ -126,8 +127,9 @@ export function prepareRunSession(config, logger = console) {
   const head = runGit(config.workspace, ["rev-parse", "HEAD"]);
   const headSubject = runGit(config.workspace, ["log", "-1", "--pretty=%s"]);
   const matchesHead = Boolean(finalLogCommit?.hash && head.startsWith(finalLogCommit.hash));
-  const configInstructionText = config.operatorInstruction || config.mission || "";
-  const configInstructionField = config.operatorInstruction ? "operatorInstruction" : "mission";
+  const configInstruction = buildConfigInstructionSnapshot(config);
+  const configInstructionText = configInstruction.text;
+  const configInstructionField = configInstruction.field;
   const previousConfigInstructionText = previousState?.configInstruction?.text || "";
   const configInstructionChanged = configInstructionText !== previousConfigInstructionText;
   const shouldClean = config.restart?.cleanCycleLogs !== false;

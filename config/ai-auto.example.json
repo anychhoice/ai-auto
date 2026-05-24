@@ -9,6 +9,15 @@
   "logDir": ".ai-auto",
   "instructionFile": ".ai-auto/instructions.md",
   "operatorInstruction": "",
+  "goals": [
+    "Actively improve the target project every cycle.",
+    "First understand the architecture, tests, risks, and improvement opportunities.",
+    "Make one concrete, small, tested, reviewable code or test change each normal cycle."
+  ],
+  "rules": [
+    "Avoid no-op analysis cycles unless the workspace is already cleanly complete or a safety concern blocks changes.",
+    "Never change secrets, credentials, or deployment configuration unless explicitly requested."
+  ],
   "autoCommit": false,
   "restart": {
     "cleanCycleLogs": true,
@@ -85,5 +94,5 @@
       "reconnectDelaySeconds": 5
     }
   },
-  "mission": "Actively improve the target project every cycle. First understand the architecture, tests, risks, and improvement opportunities, then make one concrete, small, tested, reviewable code or test change. Avoid no-op analysis cycles unless the workspace is already cleanly complete or a safety concern blocks changes. Never change secrets, credentials, or deployment configuration unless explicitly requested."
+  "mission": ""
 }

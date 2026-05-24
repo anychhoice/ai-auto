@@ -12,6 +12,15 @@ export const DEFAULT_CONFIG = {
   logDir: ".ai-auto",
   instructionFile: ".ai-auto/instructions.md",
   operatorInstruction: "",
+  goals: [
+    "Actively improve the target project every cycle.",
+    "First understand the architecture, tests, risks, and improvement opportunities.",
+    "Make one concrete, small, tested, reviewable code or test change each normal cycle."
+  ],
+  rules: [
+    "Avoid no-op analysis cycles unless the workspace is already cleanly complete or a safety concern blocks changes.",
+    "Never change secrets, credentials, or deployment configuration unless explicitly requested."
+  ],
   autoCommit: false,
   restart: {
     cleanCycleLogs: true,
@@ -84,9 +93,72 @@ export const DEFAULT_CONFIG = {
       reconnectDelaySeconds: 5
     }
   },
-  mission:
-    "Actively improve the target project every cycle. First understand the architecture, tests, risks, and improvement opportunities, then make one concrete, small, tested, reviewable code or test change. Avoid no-op analysis cycles unless the workspace is already cleanly complete or a safety concern blocks changes. Never change secrets, credentials, or deployment configuration unless explicitly requested."
+  mission: ""
 };
+
+export function normalizeInstructionList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value.trim() ? [value.trim()] : [];
+  }
+  return [];
+}
+
+function formatNumberedSection(title, items) {
+  if (!items.length) {
+    return "";
+  }
+  return [title, ...items.map((item, index) => `${index + 1}. ${item}`)].join("\n");
+}
+
+export function buildConfigInstructionContext(config) {
+  const goals = normalizeInstructionList(config.goals);
+  const rules = normalizeInstructionList(config.rules);
+  const mission = String(config.mission || "").trim();
+  const sections = [
+    formatNumberedSection("Goals:", goals),
+    mission ? `Legacy mission:\n${mission}` : "",
+    formatNumberedSection("Must-follow rules:", rules)
+  ].filter(Boolean);
+
+  return {
+    goals,
+    rules,
+    mission,
+    text: sections.join("\n\n")
+  };
+}
+
+export function buildConfigInstructionSnapshot(config) {
+  const operatorInstruction = String(config.operatorInstruction || "").trim();
+  if (operatorInstruction) {
+    return {
+      field: "operatorInstruction",
+      text: operatorInstruction
+    };
+  }
+
+  const context = buildConfigInstructionContext(config);
+  if (!context.goals.length && !context.rules.length && context.mission) {
+    return {
+      field: "mission",
+      text: context.mission
+    };
+  }
+
+  const fields = [
+    context.goals.length ? "goals" : "",
+    context.mission ? "mission" : "",
+    context.rules.length ? "rules" : ""
+  ].filter(Boolean);
+
+  return {
+    field: fields.join("+") || "none",
+    text: context.text
+  };
+}
 
 export function parseDuration(value) {
   if (typeof value === "number" && Number.isFinite(value)) {

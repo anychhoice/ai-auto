@@ -1,10 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
+import { buildConfigInstructionContext } from "./config.js";
 import { detectProjectCommands } from "./detectCommands.js";
 import { readInstructions, readLatestInstruction } from "./instructions.js";
 import { runCommand, runCommandList, runProcess, summarizeCommandResult } from "./shell.js";
 
 export async function getWorkspaceContext(config, options = {}) {
+  const configInstructionContext = buildConfigInstructionContext(config);
   const statusResults = await runCommandList(config.commands.status, {
     cwd: config.workspace,
     timeoutMs: 60_000,
@@ -30,7 +32,10 @@ export async function getWorkspaceContext(config, options = {}) {
 
   return {
     workspace: config.workspace,
-    mission: config.mission,
+    mission: configInstructionContext.mission,
+    goals: configInstructionContext.goals,
+    rules: configInstructionContext.rules,
+    configInstructionText: configInstructionContext.text,
     operatorInstruction: config.operatorInstruction || "",
     runState: options.runState || null,
     sessionInstructions: readInstructions(config),

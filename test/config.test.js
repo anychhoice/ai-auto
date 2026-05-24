@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deepMerge, parseDuration } from "../src/config.js";
+import {
+  buildConfigInstructionContext,
+  buildConfigInstructionSnapshot,
+  deepMerge,
+  normalizeInstructionList,
+  parseDuration
+} from "../src/config.js";
 
 test("parseDuration supports common units", () => {
   assert.equal(parseDuration("500ms"), 500);
@@ -57,4 +63,56 @@ test("deepMerge preserves codex planner defaults", () => {
       timeoutMs: 1_200_000
     }
   });
+});
+
+test("normalizeInstructionList accepts arrays and legacy strings", () => {
+  assert.deepEqual(normalizeInstructionList([" one ", "", "two"]), ["one", "two"]);
+  assert.deepEqual(normalizeInstructionList("legacy mission"), ["legacy mission"]);
+  assert.deepEqual(normalizeInstructionList(null), []);
+});
+
+test("buildConfigInstructionContext separates goals, mission, and rules", () => {
+  const context = buildConfigInstructionContext({
+    goals: ["Improve v2 accuracy"],
+    mission: "Legacy fallback mission.",
+    rules: ["Never edit secrets"]
+  });
+
+  assert.deepEqual(context.goals, ["Improve v2 accuracy"]);
+  assert.deepEqual(context.rules, ["Never edit secrets"]);
+  assert.match(context.text, /Goals:\n1\. Improve v2 accuracy/);
+  assert.match(context.text, /Legacy mission:\nLegacy fallback mission/);
+  assert.match(context.text, /Must-follow rules:\n1\. Never edit secrets/);
+});
+
+test("buildConfigInstructionSnapshot gives operatorInstruction priority", () => {
+  assert.deepEqual(
+    buildConfigInstructionSnapshot({
+      operatorInstruction: "Fix MusicXML first.",
+      goals: ["Improve v2"],
+      rules: ["Do not edit secrets"],
+      mission: ""
+    }),
+    { field: "operatorInstruction", text: "Fix MusicXML first." }
+  );
+
+  const snapshot = buildConfigInstructionSnapshot({
+    operatorInstruction: "",
+    goals: ["Improve v2"],
+    rules: ["Do not edit secrets"],
+    mission: ""
+  });
+  assert.equal(snapshot.field, "goals+rules");
+  assert.match(snapshot.text, /Improve v2/);
+  assert.match(snapshot.text, /Do not edit secrets/);
+
+  assert.deepEqual(
+    buildConfigInstructionSnapshot({
+      operatorInstruction: "",
+      goals: [],
+      rules: [],
+      mission: "Legacy only"
+    }),
+    { field: "mission", text: "Legacy only" }
+  );
 });
