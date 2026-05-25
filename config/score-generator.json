@@ -13,6 +13,12 @@
     "enabled": true,
     "command": "git push"
   },
+  "ciCheck": {
+    "enabled": true,
+    "command": "node ../ai-auto/scripts/check-github-actions.js --workflow Deploy --event push --timeout-ms 3600000",
+    "required": true,
+    "timeoutMs": 3600000
+  },
   "restart": {
     "cleanCycleLogs": true,
     "archiveCycleLogs": true,
@@ -80,6 +86,7 @@
   },
   "goals": [
     "최우선: commit 후 push를 반드시 수행하도록 보장한다.",
+    "최우선: push 직후 HEAD commit의 GitHub Actions Deploy run을 확인하고, 실패하면 다음 cycle에서 그 실패 원인을 먼저 고친다.",
     "최우선: push 이후 CI/CD가 scripts/deploy.sh를 통해 배포하고 배포 이력을 기록하도록 만든다.",
     "최우선: CI/CD 배포 후 smoke/health check를 실행하고, 실패 시 이전 안정 상태로 되돌릴 수 있게 한다.",
     "v2 실제 원곡 benchmark asset을 repo에 고정한다.",
@@ -90,6 +97,7 @@
   "rules": [
     "secrets, .env, 임시 output은 커밋하지 않는다.",
     "모든 변경사항은 commit하고 push한다. commit만 되고 push되지 않은 상태를 완료로 보지 않는다.",
+    "push 후 ciCheck가 성공하지 않은 cycle은 완료로 보지 않고, 다음 cycle에서 CI/CD 실패 원인을 최우선으로 고친다.",
     "배포는 CI/CD가 scripts/deploy.sh를 호출하는 방식으로만 수행한다.",
     "firebase/gcloud 직접 배포 명령은 scripts/deploy.sh 밖에서 실행하지 않는다.",
     "Docker는 로컬에서 띄우지 않는다.",

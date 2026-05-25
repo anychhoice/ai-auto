@@ -23,6 +23,12 @@
     "enabled": false,
     "command": "git push"
   },
+  "ciCheck": {
+    "enabled": false,
+    "command": "",
+    "required": false,
+    "timeoutMs": 1800000
+  },
   "restart": {
     "cleanCycleLogs": true,
     "archiveCycleLogs": true,

@@ -63,6 +63,12 @@ test("formatTelegramCycleReport reads cycle log details", () => {
           { command: "git add -A", exitCode: 0, stdout: "", stderr: "" },
           { command: "git commit -m test", exitCode: 0, stdout: "[main abc1234] Add test\n", stderr: "" }
         ],
+        ciCheck: {
+          command: "node ../ai-auto/scripts/check-github-actions.js --workflow Deploy",
+          exitCode: 0,
+          stdout: "GitHub Actions passed: Deploy #42 completed/success",
+          stderr: ""
+        },
         instructionsCleared: { cleared: true }
       },
       null,
@@ -78,6 +84,7 @@ test("formatTelegramCycleReport reads cycle log details", () => {
   assert.match(report, /개발: MusicXML 변환 회귀 테스트/);
   assert.match(report, /검증 통과/);
   assert.match(report, /커밋 abc1234/);
+  assert.match(report, /CI\/CD 통과/);
   assert.match(report, /지시 정리/);
 });
 

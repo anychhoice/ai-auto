@@ -60,6 +60,19 @@ function pushCommand(config) {
   return config.push?.command || "git push";
 }
 
+function ciCheckEnabled(config) {
+  return Boolean(config.ciCheck?.enabled);
+}
+
+function ciCheckCommand(config) {
+  return String(config.ciCheck?.command || "").trim();
+}
+
+function ciCheckTimeoutMs(config) {
+  const timeoutMs = Number(config.ciCheck?.timeoutMs);
+  return Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 30 * 60_000;
+}
+
 function planningProgressDetail(config, context) {
   if (context.latestSessionInstruction) {
     return `최신 지시를 어떻게 구현할지 계획 중입니다: ${context.latestSessionInstruction}`;
@@ -336,6 +349,7 @@ export async function runCycle(config, logger = console, options = {}) {
     deploy: null,
     commit: null,
     push: null,
+    ciCheck: null,
     instructionFulfillment: null,
     instructionsCleared: null
   };
@@ -613,6 +627,72 @@ export async function runCycle(config, logger = console, options = {}) {
         logPath
       });
       return { ok: false, outcome: cycleLog.outcome, logPath, plan };
+    }
+  }
+
+  if (ciCheckEnabled(config)) {
+    const command = ciCheckCommand(config);
+    recordProgress(config, logger, {
+      running: true,
+      phase: "ci_check",
+      phaseLabel: "CI/CD 확인 중",
+      detail: command || "ciCheck.command가 비어 있어 CI/CD 확인을 건너뛸지 확인 중입니다."
+    });
+
+    if (!command) {
+      cycleLog.ciCheck = {
+        skipped: true,
+        reason: "ciCheck.enabled is true, but ciCheck.command is empty"
+      };
+      if (config.ciCheck.required) {
+        cycleLog.finishedAt = new Date().toISOString();
+        cycleLog.outcome = "ci_failed";
+        cycleLog.failureSummary = cycleLog.ciCheck.reason;
+        const logPath = writeJsonLog(config, "cycle", cycleLog);
+        recordProgress(config, logger, {
+          running: false,
+          phase: "failed",
+          phaseLabel: "CI/CD 실패",
+          detail: cycleLog.failureSummary,
+          outcome: cycleLog.outcome,
+          logPath
+        });
+        return { ok: false, outcome: cycleLog.outcome, logPath, plan };
+      }
+    } else {
+      cycleLog.ciCheck = await runCommand(command, {
+        cwd: config.workspace,
+        timeoutMs: ciCheckTimeoutMs(config),
+        signal: forceSignal
+      });
+      if (!isForceShutdown(options) && !commandPassed(cycleLog.ciCheck) && config.ciCheck.required) {
+        cycleLog.finishedAt = new Date().toISOString();
+        cycleLog.outcome = "ci_failed";
+        cycleLog.failureSummary = summarizeCommandResult(cycleLog.ciCheck);
+        const logPath = writeJsonLog(config, "cycle", cycleLog);
+        recordProgress(config, logger, {
+          running: false,
+          phase: "failed",
+          phaseLabel: "CI/CD 실패",
+          detail: cycleLog.failureSummary,
+          outcome: cycleLog.outcome,
+          logPath
+        });
+        return { ok: false, outcome: cycleLog.outcome, logPath, plan };
+      }
+    }
+
+    if (isForceShutdown(options)) {
+      const result = writeForceShutdownLog(config, cycleLog, plan);
+      recordProgress(config, logger, {
+        running: false,
+        phase: "force_shutdown",
+        phaseLabel: "강제 종료됨",
+        detail: "CI/CD 확인 중 운영자가 강제 종료했습니다.",
+        outcome: result.outcome,
+        logPath: result.logPath
+      });
+      return result;
     }
   }
 

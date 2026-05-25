@@ -209,6 +209,7 @@ export function buildCodexPlannerPrompt(config, context, previousFailure = "") {
     "- goals are desired outcomes. rules are mandatory constraints. Never violate rules to chase goals, mission, or backlog work.",
     "- If newConfigInstruction is present, it has priority over resume state and inferred continuation work.",
     "- If resumedFromCommit is present, treat that commit as already completed and do not repeat it.",
+    "- If latestCycleFailure is present, repair or directly investigate that failure before unrelated work.",
     "- Default to shouldModify=true unless the workspace is blocked or already complete.",
     "- cycleSummary must be Korean and must say what will be developed or verified for the user. Do not summarize with cleanliness/status phrases like \"workspace is clean\", \"repo is clean\", or \"working tree clean\".",
     "- If latestSessionInstruction is already satisfied, codexPrompt must ask the worker to verify that with concrete evidence and then stop instead of choosing unrelated work.",
@@ -232,6 +233,7 @@ export function buildCodexPlannerPrompt(config, context, previousFailure = "") {
         operatorInstruction: context.operatorInstruction,
         newConfigInstruction: context.runState?.newConfigInstruction || null,
         resumedFromCommit: context.runState?.resumedFromCommit || null,
+        latestCycleFailure: context.latestCycleFailure || null,
         latestSessionInstruction: context.latestSessionInstruction || "",
         sessionInstructions: context.sessionInstructions,
         detectedCommands: context.detectedCommands,
@@ -272,6 +274,7 @@ function compactCycleLogForFulfillment(cycleLog) {
       stderr: truncate(result.stderr || "", 2_000)
     })),
     commit: cycleLog.commit || null,
+    ciCheck: cycleLog.ciCheck || null,
     deploy: cycleLog.deploy || null,
     failureSummary: cycleLog.failureSummary || ""
   };

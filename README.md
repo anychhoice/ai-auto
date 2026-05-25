@@ -657,6 +657,23 @@ git commit -m "..."
 
 검증과 자동 커밋 이후 Git push를 실행할지 여부입니다. `push.enabled`가 `true`이면 `command`를 실행하고, 실패하면 해당 cycle은 `push_failed`로 끝납니다. CI/CD 배포를 쓰는 프로젝트에서는 `autoCommit: true`와 함께 켜서 push 이후 배포 파이프라인이 시작되게 합니다.
 
+### ciCheck
+
+```json
+{
+  "ciCheck": {
+    "enabled": true,
+    "command": "node ../ai-auto/scripts/check-github-actions.js --workflow Deploy --event push --timeout-ms 3600000",
+    "required": true,
+    "timeoutMs": 3600000
+  }
+}
+```
+
+push 이후 원격 CI/CD 상태를 확인하는 단계입니다. `ciCheck.enabled`가 `true`이면 push 다음에 `command`를 실행하고, `required`가 `true`인 상태에서 실패하면 cycle은 `ci_failed`로 끝납니다. 그러면 다음 cycle의 planner는 직전 CI/CD 실패 로그를 보고 그 원인을 먼저 고치도록 계획합니다.
+
+GitHub Actions를 확인할 때는 `scripts/check-github-actions.js`를 사용할 수 있습니다. 이 스크립트는 현재 workspace의 `origin`과 `HEAD`를 읽어 해당 commit의 workflow run을 기다립니다. private repo라면 `GITHUB_TOKEN` 또는 `GH_TOKEN`에 Actions 읽기 권한이 필요하며, `gh auth login`이 되어 있으면 `gh auth token`도 fallback으로 사용합니다.
+
 ### operatorInstruction
 
 ```json

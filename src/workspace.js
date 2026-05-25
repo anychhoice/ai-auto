@@ -5,6 +5,61 @@ import { detectProjectCommands } from "./detectCommands.js";
 import { readInstructions, readLatestInstruction } from "./instructions.js";
 import { runCommand, runCommandList, runProcess, summarizeCommandResult } from "./shell.js";
 
+function truncate(value, maxChars = 4_000) {
+  const text = String(value || "");
+  if (text.length <= maxChars) {
+    return text;
+  }
+  return `${text.slice(0, maxChars - 20)} ...[truncated]`;
+}
+
+function compactCommandResult(result) {
+  if (!result) {
+    return null;
+  }
+  return {
+    command: result.command || "",
+    exitCode: result.exitCode ?? null,
+    timedOut: Boolean(result.timedOut),
+    aborted: Boolean(result.aborted),
+    stdout: truncate(result.stdout || "", 2_000),
+    stderr: truncate(result.stderr || "", 2_000)
+  };
+}
+
+function readLatestCycleFailure(config) {
+  try {
+    if (!fs.existsSync(config.logDir)) {
+      return null;
+    }
+    const latestFile = fs
+      .readdirSync(config.logDir)
+      .filter((file) => file.endsWith("-cycle.json"))
+      .sort()
+      .at(-1);
+    if (!latestFile) {
+      return null;
+    }
+
+    const log = JSON.parse(fs.readFileSync(path.join(config.logDir, latestFile), "utf8"));
+    if (!log?.outcome || ["verified", "no_change_requested"].includes(log.outcome)) {
+      return null;
+    }
+
+    return {
+      outcome: log.outcome,
+      finishedAt: log.finishedAt || "",
+      planSummary: log.plan?.cycleSummary || "",
+      failureSummary: truncate(log.failureSummary || "", 6_000),
+      push: compactCommandResult(log.push),
+      ciCheck: compactCommandResult(log.ciCheck),
+      deploy: compactCommandResult(log.deploy)
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function getWorkspaceContext(config, options = {}) {
   const configInstructionContext = buildConfigInstructionContext(config);
   const statusResults = await runCommandList(config.commands.status, {
@@ -38,6 +93,7 @@ export async function getWorkspaceContext(config, options = {}) {
     configInstructionText: configInstructionContext.text,
     operatorInstruction: config.operatorInstruction || "",
     runState: options.runState || null,
+    latestCycleFailure: readLatestCycleFailure(config),
     sessionInstructions: readInstructions(config),
     latestSessionInstruction: readLatestInstruction(config),
     detectedCommands: config.commandDiscovery.enabled

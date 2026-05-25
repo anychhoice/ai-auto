@@ -59,6 +59,10 @@ function outcomeLabel(outcome) {
     no_change_requested: "변경 없음",
     verification_failed: "검증 실패",
     test_setup_missing: "테스트 필요",
+    commit_failed: "커밋 실패",
+    push_failed: "푸시 실패",
+    ci_failed: "CI/CD 실패",
+    deploy_failed: "배포 실패",
     force_shutdown: "강제 종료"
   };
   return labels[outcome] || "종료";
@@ -193,6 +197,17 @@ function formatCommitOneLine(log) {
   return `커밋 실패: ${truncate(compactLine(output || commit?.command || "unknown"), 120)}`;
 }
 
+function formatCiCheckOneLine(log) {
+  const check = log?.ciCheck;
+  if (!check || check.skipped) {
+    return "";
+  }
+  if (check.exitCode === 0 && !check.timedOut && !check.aborted) {
+    return "CI/CD 통과";
+  }
+  return `CI/CD 실패: ${truncate(compactLine(check.stdout || check.stderr || check.command || "unknown"), 100)}`;
+}
+
 export function formatTelegramCycleReport(result) {
   const log = readJsonIfExists(result.logPath);
   const plan = log?.plan || result.plan || {};
@@ -205,6 +220,7 @@ export function formatTelegramCycleReport(result) {
     summary,
     formatVerificationOneLine(log),
     formatCommitOneLine(log),
+    formatCiCheckOneLine(log),
     instructionsCleared,
     failure
   ].filter(Boolean).join(" · ");

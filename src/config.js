@@ -26,6 +26,12 @@ export const DEFAULT_CONFIG = {
     enabled: false,
     command: "git push"
   },
+  ciCheck: {
+    enabled: false,
+    command: "",
+    required: false,
+    timeoutMs: 30 * 60_000
+  },
   restart: {
     cleanCycleLogs: true,
     archiveCycleLogs: true,
