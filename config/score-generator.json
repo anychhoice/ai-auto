@@ -1,0 +1,106 @@
+{
+  "workspace": "../score-generator",
+  "model": "gpt-5.5",
+  "reasoningEffort": "high",
+  "cycleInterval": "30s",
+  "maxRuntime": "24h",
+  "maxIterationsPerCycle": 5,
+  "discussionRounds": 5,
+  "logDir": ".ai-auto",
+  "instructionFile": ".ai-auto/instructions.md",
+  "autoCommit": true,
+  "push": {
+    "enabled": true,
+    "command": "git push"
+  },
+  "restart": {
+    "cleanCycleLogs": true,
+    "archiveCycleLogs": true,
+    "stateFile": ".ai-auto/run-state.json"
+  },
+  "allowPlannerCommandOverride": true,
+  "commandDiscovery": {
+    "enabled": true,
+    "requireTests": true,
+    "fallbackVerifyCommands": [
+      "git diff --check"
+    ]
+  },
+  "codexConsultation": {
+    "enabled": true,
+    "questionSource": "openai",
+    "sandbox": "read-only",
+    "approvalPolicy": "never",
+    "timeoutMs": 1200000
+  },
+  "commands": {
+    "test": [],
+    "verify": [],
+    "status": [
+      "git status --short"
+    ]
+  },
+  "codex": {
+    "command": "codex",
+    "model": "gpt-5.5",
+    "sandbox": "workspace-write",
+    "approvalPolicy": "never"
+  },
+  "deploy": {
+    "enabled": false,
+    "command": "",
+    "requireCleanGit": true,
+    "requireCommand": false,
+    "required": false
+  },
+  "telegram": {
+    "enabled": false,
+    "botTokenEnv": "TELEGRAM_BOT_TOKEN",
+    "chatIdEnv": "TELEGRAM_CHAT_ID",
+    "chatId": "",
+    "reportCycles": true,
+    "commands": {
+      "enabled": true,
+      "allowedChatIds": [],
+      "pollTimeoutSeconds": 25,
+      "stateFile": ".ai-auto/telegram-offset.json"
+    }
+  },
+  "slack": {
+    "enabled": true,
+    "botTokenEnv": "SLACK_BOT_TOKEN",
+    "appTokenEnv": "SLACK_APP_TOKEN",
+    "channelIdEnv": "SLACK_CHANNEL_ID",
+    "channelId": "",
+    "reportCycles": true,
+    "commands": {
+      "enabled": true,
+      "allowedUserIds": [],
+      "allowedChannelIds": [],
+      "reconnectDelaySeconds": 5
+    }
+  },
+  "goals": [
+    "최우선: commit 후 push를 반드시 수행하도록 보장한다.",
+    "최우선: push 이후 CI/CD가 scripts/deploy.sh를 통해 배포하고 배포 이력을 기록하도록 만든다.",
+    "최우선: CI/CD 배포 후 smoke/health check를 실행하고, 실패 시 이전 안정 상태로 되돌릴 수 있게 한다.",
+    "v2 실제 원곡 benchmark asset을 repo에 고정한다.",
+    "API 경유 stem split 실패 원인을 고치거나 더 안정적인 대체 경로를 적용한다.",
+    "깨지거나 이상한 MusicXML 출력을 정상 악보 구조로 고친다.",
+    "피아노 전사 정확도를 benchmark 지표로 측정하며 개선한다."
+  ],
+  "rules": [
+    "secrets, .env, 임시 output은 커밋하지 않는다.",
+    "모든 변경사항은 commit하고 push한다. commit만 되고 push되지 않은 상태를 완료로 보지 않는다.",
+    "배포는 CI/CD가 scripts/deploy.sh를 호출하는 방식으로만 수행한다.",
+    "firebase/gcloud 직접 배포 명령은 scripts/deploy.sh 밖에서 실행하지 않는다.",
+    "Docker는 로컬에서 띄우지 않는다.",
+    "CI/CD 배포는 배포 이력과 smoke/health check 결과를 남기고, 실패 시 rollback 또는 revert 계획을 남긴다.",
+    "임시 작업은 프로젝트 내부 tmp/에서만 수행하고, 작업 후 비운다.",
+    "유지해야 하는 benchmark asset, stem, prediction, report, validation 결과는 functions/benchmarks에 저장한다.",
+    "stem이 없으면 먼저 split하고, force 옵션에서는 stem부터 재생성한다.",
+    "MusicXML/PDF validation 실패나 비정상 악보 출력은 전사 품질 튜닝보다 먼저 고친다.",
+    "cycle 결과에는 artifact path, 정확도, validation, before/after 개선 결과를 짧게 보고한다."
+  ],
+  "mission": ""
+}
