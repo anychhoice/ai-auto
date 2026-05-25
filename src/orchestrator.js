@@ -44,8 +44,20 @@ function resultsPassed(results) {
   return results.length > 0 && results.every((result) => result.exitCode === 0 && !result.timedOut);
 }
 
+function commandPassed(result) {
+  return Boolean(result && result.exitCode === 0 && !result.timedOut && !result.aborted);
+}
+
 function summarizeResults(results) {
   return results.map((result) => summarizeCommandResult(result)).join("\n\n");
+}
+
+function pushEnabled(config) {
+  return Boolean(config.push?.enabled || config.autoPush);
+}
+
+function pushCommand(config) {
+  return config.push?.command || "git push";
 }
 
 function planningProgressDetail(config, context) {
@@ -323,6 +335,7 @@ export async function runCycle(config, logger = console, options = {}) {
     verification: [],
     deploy: null,
     commit: null,
+    push: null,
     instructionFulfillment: null,
     instructionsCleared: null
   };
@@ -541,6 +554,66 @@ export async function runCycle(config, logger = console, options = {}) {
       });
       return result;
     }
+    if (
+      !resultsPassed(cycleLog.commit) &&
+      !(await isGitClean(config.workspace, { signal: forceSignal }))
+    ) {
+      cycleLog.finishedAt = new Date().toISOString();
+      cycleLog.outcome = "commit_failed";
+      cycleLog.failureSummary = summarizeResults(cycleLog.commit);
+      const logPath = writeJsonLog(config, "cycle", cycleLog);
+      recordProgress(config, logger, {
+        running: false,
+        phase: "failed",
+        phaseLabel: "커밋 실패",
+        detail: cycleLog.failureSummary,
+        outcome: cycleLog.outcome,
+        logPath
+      });
+      return { ok: false, outcome: cycleLog.outcome, logPath, plan };
+    }
+  }
+
+  if (pushEnabled(config)) {
+    const command = pushCommand(config);
+    recordProgress(config, logger, {
+      running: true,
+      phase: "push",
+      phaseLabel: "푸시 실행 중",
+      detail: command
+    });
+    cycleLog.push = await runCommand(command, {
+      cwd: config.workspace,
+      timeoutMs: 10 * 60_000,
+      signal: forceSignal
+    });
+    if (isForceShutdown(options)) {
+      const result = writeForceShutdownLog(config, cycleLog, plan);
+      recordProgress(config, logger, {
+        running: false,
+        phase: "force_shutdown",
+        phaseLabel: "강제 종료됨",
+        detail: "푸시 중 운영자가 강제 종료했습니다.",
+        outcome: result.outcome,
+        logPath: result.logPath
+      });
+      return result;
+    }
+    if (!commandPassed(cycleLog.push)) {
+      cycleLog.finishedAt = new Date().toISOString();
+      cycleLog.outcome = "push_failed";
+      cycleLog.failureSummary = summarizeCommandResult(cycleLog.push);
+      const logPath = writeJsonLog(config, "cycle", cycleLog);
+      recordProgress(config, logger, {
+        running: false,
+        phase: "failed",
+        phaseLabel: "푸시 실패",
+        detail: cycleLog.failureSummary,
+        outcome: cycleLog.outcome,
+        logPath
+      });
+      return { ok: false, outcome: cycleLog.outcome, logPath, plan };
+    }
   }
 
   if (config.deploy.enabled) {
@@ -555,6 +628,21 @@ export async function runCycle(config, logger = console, options = {}) {
         skipped: true,
         reason: "deploy.enabled is true, but deploy.command is empty"
       };
+      if (config.deploy.requireCommand || config.deploy.required) {
+        cycleLog.finishedAt = new Date().toISOString();
+        cycleLog.outcome = "deploy_failed";
+        cycleLog.failureSummary = cycleLog.deploy.reason;
+        const logPath = writeJsonLog(config, "cycle", cycleLog);
+        recordProgress(config, logger, {
+          running: false,
+          phase: "failed",
+          phaseLabel: "배포 실패",
+          detail: cycleLog.failureSummary,
+          outcome: cycleLog.outcome,
+          logPath
+        });
+        return { ok: false, outcome: cycleLog.outcome, logPath, plan };
+      }
     } else if (
       config.deploy.requireCleanGit &&
       !(await isGitClean(config.workspace, { signal: forceSignal }))
@@ -563,12 +651,42 @@ export async function runCycle(config, logger = console, options = {}) {
         skipped: true,
         reason: "deploy.requireCleanGit is true, but the workspace has uncommitted changes"
       };
+      if (config.deploy.required) {
+        cycleLog.finishedAt = new Date().toISOString();
+        cycleLog.outcome = "deploy_failed";
+        cycleLog.failureSummary = cycleLog.deploy.reason;
+        const logPath = writeJsonLog(config, "cycle", cycleLog);
+        recordProgress(config, logger, {
+          running: false,
+          phase: "failed",
+          phaseLabel: "배포 실패",
+          detail: cycleLog.failureSummary,
+          outcome: cycleLog.outcome,
+          logPath
+        });
+        return { ok: false, outcome: cycleLog.outcome, logPath, plan };
+      }
     } else {
       cycleLog.deploy = await runCommand(config.deploy.command, {
         cwd: config.workspace,
         timeoutMs: 60 * 60_000,
         signal: forceSignal
       });
+      if (!isForceShutdown(options) && !commandPassed(cycleLog.deploy)) {
+        cycleLog.finishedAt = new Date().toISOString();
+        cycleLog.outcome = "deploy_failed";
+        cycleLog.failureSummary = summarizeCommandResult(cycleLog.deploy);
+        const logPath = writeJsonLog(config, "cycle", cycleLog);
+        recordProgress(config, logger, {
+          running: false,
+          phase: "failed",
+          phaseLabel: "배포 실패",
+          detail: cycleLog.failureSummary,
+          outcome: cycleLog.outcome,
+          logPath
+        });
+        return { ok: false, outcome: cycleLog.outcome, logPath, plan };
+      }
     }
 
     if (isForceShutdown(options)) {

@@ -646,6 +646,19 @@ git add -A
 git commit -m "..."
 ```
 
+### push
+
+```json
+{
+  "push": {
+    "enabled": false,
+    "command": "git push"
+  }
+}
+```
+
+검증과 자동 커밋 이후 Git push를 실행할지 여부입니다. `push.enabled`가 `true`이면 `command`를 실행하고, 실패하면 해당 cycle은 `push_failed`로 끝납니다. CI/CD 배포를 쓰는 프로젝트에서는 `autoCommit: true`와 함께 켜서 push 이후 배포 파이프라인이 시작되게 합니다.
+
 ### operatorInstruction
 
 ```json
@@ -711,7 +724,9 @@ AI Auto가 목표를 수행하는 동안 반드시 지켜야 할 규칙입니다
   "deploy": {
     "enabled": false,
     "command": "",
-    "requireCleanGit": true
+    "requireCleanGit": true,
+    "requireCommand": false,
+    "required": false
   }
 }
 ```
@@ -732,7 +747,7 @@ AI Auto가 목표를 수행하는 동안 반드시 지켜야 할 규칙입니다
 }
 ```
 
-`requireCleanGit`가 `true`이면 Git working tree가 깨끗할 때만 배포합니다.
+`requireCleanGit`가 `true`이면 Git working tree가 깨끗할 때만 배포합니다. `requireCommand`가 `true`이면 `deploy.enabled` 상태에서 `command`가 비어 있을 때 cycle을 실패로 처리합니다. `required`가 `true`이면 배포 skip 또는 배포 명령 실패도 cycle 실패로 처리합니다.
 
 자동 커밋 없이 배포하고 싶다면 `requireCleanGit` 때문에 배포가 건너뛰어질 수 있습니다. 이 경우 다음 중 하나를 선택해야 합니다.
 

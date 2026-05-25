@@ -22,6 +22,10 @@ export const DEFAULT_CONFIG = {
     "Never change secrets, credentials, or deployment configuration unless explicitly requested."
   ],
   autoCommit: false,
+  push: {
+    enabled: false,
+    command: "git push"
+  },
   restart: {
     cleanCycleLogs: true,
     archiveCycleLogs: true,
@@ -64,7 +68,9 @@ export const DEFAULT_CONFIG = {
   deploy: {
     enabled: false,
     command: "",
-    requireCleanGit: true
+    requireCleanGit: true,
+    requireCommand: false,
+    required: false
   },
   telegram: {
     enabled: false,
