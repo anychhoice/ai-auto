@@ -89,13 +89,11 @@ export const DEFAULT_CONFIG = {
     enabled: false,
     botTokenEnv: "SLACK_BOT_TOKEN",
     appTokenEnv: "SLACK_APP_TOKEN",
-    channelIdEnv: "SLACK_CHANNEL_ID",
     channelId: "",
     reportCycles: true,
     commands: {
       enabled: false,
       allowedUserIds: [],
-      allowedChannelIds: [],
       reconnectDelaySeconds: 5
     }
   },

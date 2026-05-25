@@ -16,7 +16,7 @@ function getSlackAppToken(config) {
 }
 
 function getDefaultChannelId(config) {
-  return config.slack?.channelId || process.env[config.slack?.channelIdEnv || "SLACK_CHANNEL_ID"];
+  return config.slack?.channelId || "";
 }
 
 function splitMessage(text) {
@@ -56,7 +56,8 @@ export function slackCommandsEnabled(config) {
     config.slack?.enabled &&
       config.slack?.commands?.enabled &&
       getSlackBotToken(config) &&
-      getSlackAppToken(config)
+      getSlackAppToken(config) &&
+      getDefaultChannelId(config)
   );
 }
 
@@ -138,14 +139,14 @@ export function parseSlackSlashCommand(payload) {
   return parseSlackCommand(`${command} ${text}`.trim());
 }
 
-function commandAllowed(config, payload) {
-  const allowedUserIds = new Set((config.slack?.commands?.allowedUserIds || []).filter(Boolean).map(String));
-  if (allowedUserIds.size && !allowedUserIds.has(String(payload.userId || ""))) {
+export function slackCommandAllowed(config, payload) {
+  const channelId = getDefaultChannelId(config);
+  if (!channelId || String(payload.channelId || "") !== String(channelId)) {
     return false;
   }
 
-  const allowedChannelIds = new Set((config.slack?.commands?.allowedChannelIds || []).filter(Boolean).map(String));
-  if (allowedChannelIds.size && !allowedChannelIds.has(String(payload.channelId || ""))) {
+  const allowedUserIds = new Set((config.slack?.commands?.allowedUserIds || []).filter(Boolean).map(String));
+  if (allowedUserIds.size && !allowedUserIds.has(String(payload.userId || ""))) {
     return false;
   }
 
@@ -165,7 +166,7 @@ function helpText() {
 }
 
 async function handleSlackCommand(config, payload, logger = console) {
-  if (!commandAllowed(config, payload)) {
+  if (!slackCommandAllowed(config, payload)) {
     return;
   }
 
@@ -423,7 +424,7 @@ function isAbortError(error) {
 export async function runSlackCommandLoop(config, logger = console, options = {}) {
   if (!slackCommandsEnabled(config)) {
     throw new Error(
-      "Slack commands are disabled. Set slack.enabled, slack.commands.enabled, SLACK_BOT_TOKEN, and SLACK_APP_TOKEN."
+      "Slack commands are disabled. Set slack.enabled, slack.commands.enabled, slack.channelId, SLACK_BOT_TOKEN, and SLACK_APP_TOKEN."
     );
   }
 

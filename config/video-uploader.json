@@ -1,5 +1,5 @@
 {
-  "workspace": "../score-generator",
+  "workspace": "../video-uploader",
   "model": "gpt-5.5",
   "reasoningEffort": "high",
   "cycleInterval": "30s",
@@ -70,7 +70,7 @@
     "enabled": true,
     "botTokenEnv": "SLACK_BOT_TOKEN",
     "appTokenEnv": "SLACK_APP_TOKEN",
-    "channelId": "C0B51RX3T63",
+    "channelId": "C0B5YH9HYF8",
     "reportCycles": true,
     "commands": {
       "enabled": true,

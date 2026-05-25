@@ -3,18 +3,19 @@ import test from "node:test";
 import {
   parseSlackCommand,
   parseSlackSlashCommand,
+  slackCommandAllowed,
   slackCommandsEnabled,
   slackReportsEnabled
 } from "../src/slack.js";
 
 test("slackReportsEnabled requires enabled config, bot token, and channel id", () => {
-  const base = { botTokenEnv: "__MISSING_SLACK_BOT__", channelIdEnv: "__MISSING_SLACK_CHANNEL__" };
+  const base = { botTokenEnv: "__MISSING_SLACK_BOT__" };
   assert.equal(slackReportsEnabled({ slack: { ...base, enabled: false, botToken: "xoxb-token", channelId: "C1" } }), false);
   assert.equal(slackReportsEnabled({ slack: { ...base, enabled: true, botToken: "xoxb-token", channelId: "" } }), false);
   assert.equal(slackReportsEnabled({ slack: { ...base, enabled: true, botToken: "xoxb-token", channelId: "C1" } }), true);
 });
 
-test("slackCommandsEnabled requires bot token and app token", () => {
+test("slackCommandsEnabled requires bot token, app token, and config channel id", () => {
   const base = {
     botTokenEnv: "__MISSING_SLACK_BOT__",
     appTokenEnv: "__MISSING_SLACK_APP__",
@@ -36,7 +37,32 @@ test("slackCommandsEnabled requires bot token and app token", () => {
     slackCommandsEnabled({
       slack: { ...base, enabled: true, botToken: "xoxb-token", appToken: "xapp-token" }
     }),
+    false
+  );
+  assert.equal(
+    slackCommandsEnabled({
+      slack: { ...base, enabled: true, botToken: "xoxb-token", appToken: "xapp-token", channelId: "C1" }
+    }),
     true
+  );
+});
+
+test("slackCommandAllowed uses slack.channelId for command channel", () => {
+  const config = {
+    slack: {
+      channelId: "C1",
+      commands: { allowedUserIds: [] }
+    }
+  };
+  assert.equal(slackCommandAllowed(config, { channelId: "C1", userId: "U1" }), true);
+  assert.equal(slackCommandAllowed(config, { channelId: "C2", userId: "U1" }), false);
+  assert.equal(slackCommandAllowed({ slack: { channelId: "", commands: {} } }, { channelId: "C1" }), false);
+  assert.equal(
+    slackCommandAllowed(
+      { slack: { channelId: "C1", commands: { allowedUserIds: ["U2"] } } },
+      { channelId: "C1", userId: "U1" }
+    ),
+    false
   );
 });
 

@@ -290,17 +290,15 @@ npm run clear-instructions
 
 회사 네트워크에서 Telegram이 막히는 경우 Slack Socket Mode로 cycle 종료 보고와 원격 명령을 받을 수 있습니다. 기본값은 꺼져 있고, 지금 로컬 설정 예시는 Telegram을 끄고 Slack을 켜는 형태입니다.
 
-Slack 앱에서 필요한 값은 세 가지입니다.
+Slack 앱에서 필요한 토큰은 두 가지입니다. 채널 ID는 프로젝트별 config에 직접 적습니다.
 
 ```bash
 SLACK_BOT_TOKEN=xoxb-your-bot-token
 SLACK_APP_TOKEN=xapp-your-app-level-token
-SLACK_CHANNEL_ID=C0123456789
 ```
 
 - `SLACK_BOT_TOKEN`: Bot User OAuth Token입니다. 최소 `chat:write` 권한이 필요합니다. 앱 멘션을 받으려면 `app_mentions:read`, DM 메시지를 받으려면 `im:history`도 추가합니다.
 - `SLACK_APP_TOKEN`: Socket Mode용 app-level token입니다. `connections:write` scope가 필요합니다.
-- `SLACK_CHANNEL_ID`: cycle 종료 보고를 받을 채널 ID입니다.
 
 Slack 앱 설정에서는 Socket Mode를 켜고, Event Subscriptions에 `app_mention` 또는 `message.im`을 추가한 뒤 앱을 보고받을 채널에 초대합니다. 명령은 Socket Mode 이벤트로 받으므로 공개 URL이나 별도 서버는 필요 없습니다.
 
@@ -313,11 +311,11 @@ Slack 앱 설정에서는 Socket Mode를 켜고, Event Subscriptions에 `app_men
   },
   "slack": {
     "enabled": true,
+    "channelId": "C0123456789",
     "reportCycles": true,
     "commands": {
       "enabled": true,
-      "allowedUserIds": [],
-      "allowedChannelIds": []
+      "allowedUserIds": []
     }
   }
 }
@@ -329,7 +327,7 @@ Slack 앱 설정에서는 Socket Mode를 켜고, Event Subscriptions에 `app_men
 npm run run
 ```
 
-cycle이 끝날 때 보내는 Slack 보고는 cycle 로그 파일을 읽어서 한국어 상태, 개발 내용, 검증, 커밋만 짧은 한 줄로 보냅니다. `Workspace is clean` 같은 상태 문구는 개발 내용 요약에서 제외합니다.
+cycle이 끝날 때 보내는 Slack 보고는 `slack.channelId` 채널로 갑니다. Slack 명령도 같은 `slack.channelId` 채널에서 온 것만 받습니다. cycle 보고는 cycle 로그 파일을 읽어서 한국어 상태, 개발 내용, 검증, 커밋만 짧은 한 줄로 보냅니다. `Workspace is clean` 같은 상태 문구는 개발 내용 요약에서 제외합니다.
 
 Slack에서 사용할 수 있는 명령은 다음과 같습니다.
 
@@ -354,7 +352,7 @@ Slash command를 쓰고 싶다면 Slack 앱에 `/ai-auto`를 등록한 뒤 `what
 /ai-auto instruct v2 benchmark부터 확인해.
 ```
 
-`commands.allowedUserIds`가 비어 있으면 모든 Slack 사용자의 명령을 허용합니다. 특정 사용자만 허용하려면 Slack user id를 배열에 넣습니다. `commands.allowedChannelIds`가 비어 있으면 모든 채널/DM 명령을 허용하고, 특정 채널만 허용하려면 Slack channel id를 배열에 넣습니다.
+`commands.allowedUserIds`가 비어 있으면 `slack.channelId` 채널 안의 모든 Slack 사용자의 명령을 허용합니다. 특정 사용자만 허용하려면 Slack user id를 배열에 넣습니다. 채널은 별도 허용 목록을 두지 않고 `slack.channelId` 하나로 보고와 명령을 함께 제한합니다.
 
 `npm run slack`은 runner 없이 Slack 명령만 standalone Socket Mode로 받을 때 쓰는 명령입니다. 보통은 `npm run run` 하나만 켜면 됩니다.
 
@@ -796,13 +794,11 @@ Telegram 연동 설정입니다.
     "enabled": false,
     "botTokenEnv": "SLACK_BOT_TOKEN",
     "appTokenEnv": "SLACK_APP_TOKEN",
-    "channelIdEnv": "SLACK_CHANNEL_ID",
     "channelId": "",
     "reportCycles": true,
     "commands": {
       "enabled": false,
       "allowedUserIds": [],
-      "allowedChannelIds": [],
       "reconnectDelaySeconds": 5
     }
   }
@@ -814,12 +810,10 @@ Slack 연동 설정입니다.
 - `enabled`: Slack 기능 전체 on/off
 - `botTokenEnv`: Bot User OAuth Token을 읽을 환경변수 이름
 - `appTokenEnv`: Socket Mode app-level token을 읽을 환경변수 이름
-- `channelIdEnv`: cycle 보고를 보낼 기본 channel id 환경변수 이름
-- `channelId`: 환경변수 대신 직접 지정할 기본 channel id
+- `channelId`: cycle 보고를 보내고 원격 명령도 받을 Slack channel id. 프로젝트별 config에 직접 적습니다.
 - `reportCycles`: cycle 종료 보고 여부
 - `commands.enabled`: `whatnow`, `status`, `now`, `instruct`, `show`, `clear` Socket Mode 명령 사용 여부
-- `commands.allowedUserIds`: 명령을 허용할 Slack user id 목록. 비어 있으면 모든 사용자를 허용합니다.
-- `commands.allowedChannelIds`: 명령을 허용할 Slack channel id 목록. 비어 있으면 모든 채널/DM을 허용합니다.
+- `commands.allowedUserIds`: 명령을 허용할 Slack user id 목록. 비어 있으면 `slack.channelId` 채널 안의 모든 사용자를 허용합니다.
 - `commands.reconnectDelaySeconds`: Socket Mode 연결이 끊겼을 때 재연결 전 대기 시간
 
 ### progress
