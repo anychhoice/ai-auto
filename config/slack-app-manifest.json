@@ -23,31 +23,31 @@
       {
         "command": "/whatnow",
         "description": "AI Auto 실행 누적 요약을 확인합니다.",
-        "usage_hint": "",
+        "usage_hint": "이번 실행에서 바뀐 것 요약",
         "should_escape": false
       },
       {
         "command": "/now",
         "description": "AI Auto 현재 상태와 최근 작업을 요약합니다.",
-        "usage_hint": "",
+        "usage_hint": "현재 진행 상태와 최근 실패 원인",
         "should_escape": false
       },
       {
         "command": "/instruct",
         "description": "AI Auto 실행 중인 세션에 자연어 지시를 추가합니다.",
-        "usage_hint": "자연어 지시",
+        "usage_hint": "자연어 지시 예: youtube는 분할 파이프라인부터 해",
         "should_escape": false
       },
       {
         "command": "/show",
         "description": "AI Auto 활성 지시를 확인합니다.",
-        "usage_hint": "",
+        "usage_hint": "현재 활성 지시 보기",
         "should_escape": false
       },
       {
         "command": "/clear",
         "description": "AI Auto 활성 지시를 정리합니다.",
-        "usage_hint": "",
+        "usage_hint": "완료했거나 취소할 활성 지시 정리",
         "should_escape": false
       }
     ]
