@@ -80,7 +80,7 @@ test("parseSlackCommand supports mentions, slash-style commands, and multiline a
   assert.deepEqual(parseSlackCommand("plain text"), { command: "", args: "" });
 });
 
-test("parseSlackSlashCommand supports one /ai-auto command and direct command names", () => {
+test("parseSlackSlashCommand supports router commands and direct command names", () => {
   assert.deepEqual(parseSlackSlashCommand({ command: "/ai-auto", text: "whatnow" }), {
     command: "whatnow",
     args: ""

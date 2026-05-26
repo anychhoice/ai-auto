@@ -350,8 +350,8 @@ Slack에서 사용할 수 있는 명령은 다음과 같습니다.
 Slash command를 쓰면 앱을 태그하지 않아도 됩니다. `config/slack-app-manifest.json`은 다음 명령을 등록합니다.
 
 ```text
-/ai-auto whatnow
-/ai-auto instruct v2 benchmark부터 확인해.
+/aiauto whatnow
+/aiauto instruct v2 benchmark부터 확인해.
 /whatnow
 /status
 /now
@@ -361,7 +361,7 @@ Slash command를 쓰면 앱을 태그하지 않아도 됩니다. `config/slack-a
 /help
 ```
 
-`/ai-auto`와 `/aiauto`는 라우터 명령이라 뒤에 `whatnow`, `status`, `instruct ...` 같은 하위 명령을 붙여 씁니다. `/whatnow`, `/status`, `/now`, `/instruct`, `/show`, `/clear`, `/help`는 바로 실행됩니다.
+`/aiauto`는 라우터 명령이라 뒤에 `whatnow`, `status`, `instruct ...` 같은 하위 명령을 붙여 씁니다. `/whatnow`, `/status`, `/now`, `/instruct`, `/show`, `/clear`, `/help`는 바로 실행됩니다. Slack manifest에서 slash command 이름에 하이픈이 들어가면 invalid name으로 거절될 수 있어 `/ai-auto`는 등록하지 않습니다.
 
 `commands.allowedUserIds`가 비어 있으면 `slack.channelId` 채널 안의 모든 Slack 사용자의 명령을 허용합니다. 특정 사용자만 허용하려면 Slack user id를 배열에 넣습니다. 채널은 별도 허용 목록을 두지 않고 `slack.channelId` 하나로 보고와 명령을 함께 제한합니다.
 

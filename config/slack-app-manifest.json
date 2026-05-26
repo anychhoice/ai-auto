@@ -9,12 +9,6 @@
     },
     "slash_commands": [
       {
-        "command": "/ai-auto",
-        "description": "AI Auto command router",
-        "usage_hint": "whatnow | status | instruct <지시> | show | clear | help",
-        "should_escape": false
-      },
-      {
         "command": "/aiauto",
         "description": "AI Auto command router",
         "usage_hint": "whatnow | status | instruct <지시> | show | clear | help",
