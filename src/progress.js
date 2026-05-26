@@ -26,6 +26,11 @@ function outcomeLabel(outcome) {
     no_change_requested: "변경 없음",
     verification_failed: "검증 실패",
     test_setup_missing: "테스트 필요",
+    commit_failed: "커밋 실패",
+    push_failed: "푸시 실패",
+    ci_failed: "CI/CD 실패",
+    deploy_failed: "배포 실패",
+    failure_loop_detected: "반복 실패 감지",
     force_shutdown: "강제 종료"
   };
   return labels[outcome] || outcome;

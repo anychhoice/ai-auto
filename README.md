@@ -327,12 +327,12 @@ Slack 앱 설정에서는 Socket Mode를 켜고, Event Subscriptions에 `app_men
 npm run run
 ```
 
-cycle이 끝날 때 보내는 Slack 보고는 `slack.channelId` 채널로 갑니다. Slack 명령도 같은 `slack.channelId` 채널에서 온 것만 받습니다. cycle 보고는 cycle 로그 파일을 읽어서 한국어 상태, 개발 내용, 검증, 커밋만 짧은 한 줄로 보냅니다. `Workspace is clean` 같은 상태 문구는 개발 내용 요약에서 제외합니다.
+cycle이 끝날 때 보내는 Slack 보고는 `slack.channelId` 채널로 갑니다. Slack 명령도 같은 `slack.channelId` 채널에서 온 것만 받습니다. cycle 보고는 cycle 로그 파일을 읽고 OpenAI API로 한국어 요약을 만들어 보냅니다. 실제로 무엇을 개발/수정/검증했는지, 실패했다면 원인과 다음 조치를 문장 단위로 보고하며 `Workspace is clean` 같은 상태 문구는 개발 내용 요약에서 제외합니다.
 
 Slack에서 사용할 수 있는 명령은 다음과 같습니다.
 
 - `whatnow`: 현재 실행 누적 요약
-- `status` 또는 `now`: 진행 중인 cycle 상태 즉시 확인
+- `status` 또는 `now`: 진행 중인 cycle 상태와 최근 작업/실패 원인을 OpenAI API로 요약
 - `instruct 자연어 지시`: 실행 중인 세션에 지시 추가
 - `show`: 현재 활성 지시 확인
 - `clear`: 활성 지시 정리
@@ -673,6 +673,23 @@ git commit -m "..."
 push 이후 원격 CI/CD 상태를 확인하는 단계입니다. `ciCheck.enabled`가 `true`이면 push 다음에 `command`를 실행하고, `required`가 `true`인 상태에서 실패하면 cycle은 `ci_failed`로 끝납니다. 그러면 다음 cycle의 planner는 직전 CI/CD 실패 로그를 보고 그 원인을 먼저 고치도록 계획합니다.
 
 GitHub Actions를 확인할 때는 `scripts/check-github-actions.js`를 사용할 수 있습니다. 이 스크립트는 현재 workspace의 `origin`과 `HEAD`를 읽어 해당 commit의 workflow run을 기다립니다. private repo라면 `GITHUB_TOKEN` 또는 `GH_TOKEN`에 Actions 읽기 권한이 필요하며, `gh auth login`이 되어 있으면 `gh auth token`도 fallback으로 사용합니다.
+
+### failureLoop
+
+```json
+{
+  "failureLoop": {
+    "enabled": true,
+    "maxRepeatedFailures": 3,
+    "lookbackCycles": 6,
+    "action": "stop"
+  }
+}
+```
+
+같은 실패가 반복되는지 감지하는 안전장치입니다. 최근 cycle 로그를 읽어 실패한 검증 명령과 출력이 같은 패턴으로 반복되면 `failure_loop_detected`로 cycle을 끝내고, 기본값에서는 run loop를 멈춥니다. 이때 Slack/Telegram cycle 보고에 반복 실패 원인과 다음 조치가 전달됩니다.
+
+예를 들어 `.git/index.lock: Operation not permitted`, 네트워크 차단, 인증 누락처럼 현재 실행 환경에서 해결할 수 없는 실패가 반복되면 같은 `git rm`, `push`, API 호출을 계속 재시도하지 않게 합니다. `action`은 현재 `stop`을 권장합니다.
 
 ### operatorInstruction
 

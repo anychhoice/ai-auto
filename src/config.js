@@ -32,6 +32,12 @@ export const DEFAULT_CONFIG = {
     required: false,
     timeoutMs: 30 * 60_000
   },
+  failureLoop: {
+    enabled: true,
+    maxRepeatedFailures: 3,
+    lookbackCycles: 6,
+    action: "stop"
+  },
   restart: {
     cleanCycleLogs: true,
     archiveCycleLogs: true,

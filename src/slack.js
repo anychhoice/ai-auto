@@ -1,7 +1,6 @@
 import { appendInstruction, clearInstructions, readInstructions } from "./instructions.js";
 import { formatRunProgress, readRunProgress } from "./progress.js";
-import { buildWhatNowSummary } from "./statusSummary.js";
-import { formatTelegramCycleReport as formatCycleReport } from "./telegram.js";
+import { buildCycleReportSummary, buildNowStatusSummary, buildWhatNowSummary } from "./statusSummary.js";
 
 const SLACK_API = "https://slack.com/api";
 const MAX_MESSAGE_LENGTH = 3500;
@@ -86,7 +85,7 @@ export async function sendSlackCycleReport(config, result) {
     return;
   }
 
-  await sendSlackMessage(config, formatCycleReport(result));
+  await sendSlackMessage(config, await buildCycleReportSummary(config, result, { timeoutMs: 120_000 }));
 }
 
 function stripBotMention(text) {
@@ -186,7 +185,8 @@ async function handleSlackCommand(config, payload, logger = console) {
   }
 
   if (payload.command === "status" || payload.command === "now") {
-    await respond(formatRunProgress(readRunProgress(config)));
+    await respond(["상태 요약 생성 중입니다...", formatRunProgress(readRunProgress(config))].join("\n"));
+    await respond(await buildNowStatusSummary(config, process.cwd(), { timeoutMs: 120_000 }));
     return;
   }
 

@@ -29,6 +29,12 @@
     "required": false,
     "timeoutMs": 1800000
   },
+  "failureLoop": {
+    "enabled": true,
+    "maxRepeatedFailures": 3,
+    "lookbackCycles": 6,
+    "action": "stop"
+  },
   "restart": {
     "cleanCycleLogs": true,
     "archiveCycleLogs": true,

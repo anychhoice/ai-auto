@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { appendInstruction, clearInstructions, readInstructions } from "./instructions.js";
 import { formatRunProgress, readRunProgress } from "./progress.js";
-import { buildWhatNowSummary } from "./statusSummary.js";
+import { buildCycleReportSummary, buildNowStatusSummary, buildWhatNowSummary } from "./statusSummary.js";
 
 const TELEGRAM_API = "https://api.telegram.org";
 const MAX_MESSAGE_LENGTH = 3900;
@@ -63,6 +63,7 @@ function outcomeLabel(outcome) {
     push_failed: "푸시 실패",
     ci_failed: "CI/CD 실패",
     deploy_failed: "배포 실패",
+    failure_loop_detected: "반복 실패 감지",
     force_shutdown: "강제 종료"
   };
   return labels[outcome] || "종료";
@@ -170,7 +171,7 @@ export async function sendTelegramCycleReport(config, result) {
     return;
   }
 
-  await sendTelegramMessage(config, formatTelegramCycleReport(result));
+  await sendTelegramMessage(config, await buildCycleReportSummary(config, result, { timeoutMs: 120_000 }));
 }
 
 function formatVerificationOneLine(log) {
@@ -330,7 +331,12 @@ async function handleTelegramCommand(config, update) {
   }
 
   if (command === "status" || command === "now") {
-    await sendTelegramMessage(config, formatRunProgress(readRunProgress(config)), chatId);
+    await sendTelegramMessage(
+      config,
+      ["상태 요약 생성 중입니다...", formatRunProgress(readRunProgress(config))].join("\n"),
+      chatId
+    );
+    await sendTelegramMessage(config, await buildNowStatusSummary(config, process.cwd(), { timeoutMs: 120_000 }), chatId);
     return;
   }
 

@@ -13,6 +13,12 @@
     "enabled": true,
     "command": "git push"
   },
+  "failureLoop": {
+    "enabled": true,
+    "maxRepeatedFailures": 3,
+    "lookbackCycles": 6,
+    "action": "stop"
+  },
   "restart": {
     "cleanCycleLogs": true,
     "archiveCycleLogs": true,

@@ -73,7 +73,29 @@ function ciCheckTimeoutMs(config) {
   return Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 30 * 60_000;
 }
 
+function formatFailureLoopContext(context) {
+  const loop = context.failureLoop;
+  if (!loop?.latest) {
+    return "";
+  }
+
+  const lines = [
+    `Latest failed cycle outcome: ${loop.latest.outcome}`,
+    `Repeated failure count: ${loop.repeatedCount}/${loop.threshold}`,
+    loop.detected ? "Repeated failure loop detected. Do not repeat the same blocked action." : "",
+    loop.latest.planSummary ? `Failed plan: ${loop.latest.planSummary}` : "",
+    loop.latest.failedCommand ? `Failed command: ${loop.latest.failedCommand}` : "",
+    loop.latest.failureSummary ? `Failure summary: ${loop.latest.failureSummary}` : "",
+    loop.latest.failedOutput ? `Failure output: ${loop.latest.failedOutput}` : ""
+  ];
+
+  return lines.filter(Boolean).join("\n");
+}
+
 function planningProgressDetail(config, context) {
+  if (context.failureLoop?.detected) {
+    return `반복 실패를 감지했습니다: ${context.failureLoop.latest?.failedCommand || context.failureLoop.latest?.outcome || "unknown"}`;
+  }
   if (context.latestSessionInstruction) {
     return `최신 지시를 어떻게 구현할지 계획 중입니다: ${context.latestSessionInstruction}`;
   }
@@ -93,7 +115,8 @@ function buildImplementationPrompt(
   previousFailure,
   sessionInstructions,
   latestSessionInstruction,
-  testPolicy
+  testPolicy,
+  previousCycleFailureContext = ""
 ) {
   const configInstructionContext = buildConfigInstructionContext(config);
   return [
@@ -117,6 +140,7 @@ function buildImplementationPrompt(
     latestSessionInstruction ? `Latest live operator instruction:\n${latestSessionInstruction}` : "",
     configInstructionContext.text ? `Config goals, mission, and must-follow rules:\n${configInstructionContext.text}` : "",
     sessionInstructions ? `Active natural-language session instructions:\n${sessionInstructions}` : "",
+    previousCycleFailureContext ? `Previous cycle failure context:\n${previousCycleFailureContext}` : "",
     previousFailure ? `Previous failure:\n${previousFailure}` : "",
     "",
     "Plan:",
@@ -177,6 +201,46 @@ function writeForceShutdownLog(config, cycleLog, plan) {
   cycleLog.failureSummary = "Forced shutdown requested by operator.";
   const logPath = writeJsonLog(config, "cycle", cycleLog);
   return { ok: false, outcome: cycleLog.outcome, logPath, plan };
+}
+
+function writeFailureLoopLog(config, context) {
+  const plan = {
+    cycleSummary:
+      "반복 실패가 감지되어 같은 작업을 계속 시도하지 않고 멈춥니다. 직전 실패 원인을 확인한 뒤 실행 환경 수정이나 방향 전환이 필요합니다.",
+    shouldModify: false,
+    codexPrompt:
+      "Repeated failure loop detected before implementation. Stop and alert the operator instead of repeating the same blocked task."
+  };
+  const cycleLog = {
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+    configGoalsAtPlan: context.goals || [],
+    configRulesAtPlan: context.rules || [],
+    configInstructionTextAtPlan: context.configInstructionText || "",
+    sessionInstructionsAtPlan: context.sessionInstructions,
+    latestSessionInstructionAtPlan: context.latestSessionInstruction,
+    codexConsultation: context.codexConsultation || null,
+    planner: {
+      mode: "failure-loop-guard",
+      ok: true
+    },
+    plan,
+    failureLoop: context.failureLoop,
+    outcome: "failure_loop_detected",
+    failureSummary: formatFailureLoopContext(context),
+    detectedCommands: context.detectedCommands,
+    executedCommands: [],
+    codex: [],
+    verification: [],
+    deploy: null,
+    commit: null,
+    push: null,
+    ciCheck: null,
+    instructionFulfillment: null,
+    instructionsCleared: null
+  };
+  const logPath = writeJsonLog(config, "cycle", cycleLog);
+  return { ok: false, outcome: cycleLog.outcome, logPath, plan, failureLoop: context.failureLoop };
 }
 
 function isAbortError(error) {
@@ -267,6 +331,21 @@ export async function runCycle(config, logger = console, options = {}) {
     signal: forceSignal,
     runState: options.runState || null
   });
+  if (context.failureLoop?.detected && (config.failureLoop?.action || "stop") === "stop") {
+    logger.warn?.(
+      `[ai-auto] repeated failure loop detected (${context.failureLoop.repeatedCount}/${context.failureLoop.threshold}); stopping before repeating the same work`
+    );
+    const result = writeFailureLoopLog(config, context);
+    recordProgress(config, logger, {
+      running: false,
+      phase: "failure_loop",
+      phaseLabel: "반복 실패 감지",
+      detail: result.plan.cycleSummary,
+      outcome: result.outcome,
+      logPath: result.logPath
+    });
+    return result;
+  }
   const instructionRevisionAtPlan = getInstructionRevision(config);
   if (plannerMode(config) === "codex") {
     context.codexConsultation = {
@@ -413,6 +492,7 @@ export async function runCycle(config, logger = console, options = {}) {
 
   let failureSummary = "";
   let verificationResults = [];
+  const previousCycleFailureContext = formatFailureLoopContext(context);
 
   for (let attempt = 1; attempt <= config.maxIterationsPerCycle; attempt += 1) {
     const sessionInstructions = readInstructions(config);
@@ -426,7 +506,8 @@ export async function runCycle(config, logger = console, options = {}) {
             failureSummary,
             sessionInstructions,
             latestSessionInstruction,
-            initialTestPolicy
+            initialTestPolicy,
+            previousCycleFailureContext
           )
         : buildRepairPrompt(
             config,
@@ -902,7 +983,11 @@ export async function runLoop(config, logger = console, options = {}) {
       logger.error(`[ai-auto] Slack report failed: ${error.message}`);
     }
 
-    if (options.shutdown?.gracefulRequested || result.outcome === "force_shutdown") {
+    if (
+      options.shutdown?.gracefulRequested ||
+      result.outcome === "force_shutdown" ||
+      result.outcome === "failure_loop_detected"
+    ) {
       break;
     }
 

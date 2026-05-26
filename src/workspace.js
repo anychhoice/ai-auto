@@ -27,30 +27,161 @@ function compactCommandResult(result) {
   };
 }
 
+function cycleLogFiles(logDir) {
+  if (!fs.existsSync(logDir)) {
+    return [];
+  }
+  return fs
+    .readdirSync(logDir)
+    .filter((file) => file.endsWith("-cycle.json"))
+    .map((file) => path.join(logDir, file))
+    .sort();
+}
+
+function isFailureOutcome(outcome) {
+  return Boolean(outcome && !["verified", "no_change_requested"].includes(outcome));
+}
+
+function latestFailedVerification(log) {
+  const latestVerification = Array.isArray(log?.verification) ? log.verification.at(-1) : [];
+  return (latestVerification || []).find(
+    (result) => result.exitCode !== 0 || result.timedOut || result.aborted
+  );
+}
+
+function normalizeFailureText(value) {
+  return String(value || "")
+    .replace(/[0-9a-f]{7,40}/gi, "<hash>")
+    .replace(/\d{4}-\d{2}-\d{2}T[0-9:.+-]+Z/g, "<timestamp>")
+    .replace(/\/Users\/[^\s'"]+/g, "<path>")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 2_000);
+}
+
+function failureEssence(value) {
+  const lines = String(value || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) =>
+      /FAIL:|ERROR:|AssertionError|command not found|Operation not permitted|Unable to create|fetch failed|ENOTFOUND|ETIMEDOUT|Unauthorized/i.test(
+        line
+      )
+    );
+  return lines.length ? lines.slice(0, 20).join("\n") : "";
+}
+
+export function failureSignatureFromCycleLog(log) {
+  const failedVerification = latestFailedVerification(log);
+  const source = failedVerification || log?.ciCheck || log?.deploy || log?.push || null;
+  const sourceOutput = `${source?.stderr || ""}\n${source?.stdout || ""}`;
+  const essence = failureEssence(sourceOutput) || failureEssence(log?.failureSummary || "");
+  const text = [
+    log?.outcome || "",
+    essence || sourceOutput || log?.failureSummary || source?.command || ""
+  ].join("\n");
+  return normalizeFailureText(text);
+}
+
+function compactFailureCycle(filePath, log) {
+  const failedVerification = latestFailedVerification(log);
+  return {
+    file: path.basename(filePath),
+    outcome: log.outcome || "",
+    finishedAt: log.finishedAt || "",
+    planSummary: truncate(log.plan?.cycleSummary || "", 1_000),
+    failureSummary: truncate(log.failureSummary || "", 6_000),
+    failedCommand: failedVerification?.command || log.ciCheck?.command || log.deploy?.command || log.push?.command || "",
+    failedOutput: truncate(
+      failedVerification?.stderr ||
+        failedVerification?.stdout ||
+        log.ciCheck?.stderr ||
+        log.ciCheck?.stdout ||
+        "",
+      3_000
+    ),
+    signature: failureSignatureFromCycleLog(log)
+  };
+}
+
+export function readFailureLoop(config) {
+  try {
+    const lookback = Math.max(1, Number(config.failureLoop?.lookbackCycles || 6));
+    const entries = cycleLogFiles(config.logDir)
+      .slice(-lookback)
+      .map((filePath) => {
+        try {
+          return { filePath, log: JSON.parse(fs.readFileSync(filePath, "utf8")) };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+    const latestEntry = entries.at(-1) || null;
+    const failures = entries
+      .filter((entry) => isFailureOutcome(entry.log?.outcome))
+      .map((entry) => compactFailureCycle(entry.filePath, entry.log))
+      .filter((entry) => entry.signature);
+
+    const latest = failures.at(-1) || null;
+    let repeatedCount = 0;
+    if (latest) {
+      for (let index = entries.length - 1; index >= 0; index -= 1) {
+        if (!isFailureOutcome(entries[index].log?.outcome)) {
+          break;
+        }
+        const failure = compactFailureCycle(entries[index].filePath, entries[index].log);
+        if (failure.signature !== latest.signature) {
+          break;
+        }
+        repeatedCount += 1;
+      }
+    }
+
+    const threshold = Math.max(2, Number(config.failureLoop?.maxRepeatedFailures || 3));
+    return {
+      enabled: config.failureLoop?.enabled !== false,
+      action: config.failureLoop?.action || "stop",
+      threshold,
+      lookbackCycles: lookback,
+      repeatedCount,
+      detected:
+        config.failureLoop?.enabled !== false &&
+        isFailureOutcome(latestEntry?.log?.outcome) &&
+        repeatedCount >= threshold,
+      latest,
+      recentFailures: failures
+    };
+  } catch {
+    return {
+      enabled: config.failureLoop?.enabled !== false,
+      action: config.failureLoop?.action || "stop",
+      threshold: Math.max(2, Number(config.failureLoop?.maxRepeatedFailures || 3)),
+      lookbackCycles: Math.max(1, Number(config.failureLoop?.lookbackCycles || 6)),
+      repeatedCount: 0,
+      detected: false,
+      latest: null,
+      recentFailures: []
+    };
+  }
+}
+
 function readLatestCycleFailure(config) {
   try {
-    if (!fs.existsSync(config.logDir)) {
-      return null;
-    }
-    const latestFile = fs
-      .readdirSync(config.logDir)
-      .filter((file) => file.endsWith("-cycle.json"))
-      .sort()
-      .at(-1);
+    const latestFile = cycleLogFiles(config.logDir).at(-1);
     if (!latestFile) {
       return null;
     }
 
-    const log = JSON.parse(fs.readFileSync(path.join(config.logDir, latestFile), "utf8"));
-    if (!log?.outcome || ["verified", "no_change_requested"].includes(log.outcome)) {
+    const log = JSON.parse(fs.readFileSync(latestFile, "utf8"));
+    if (!isFailureOutcome(log?.outcome)) {
       return null;
     }
 
+    const compact = compactFailureCycle(latestFile, log);
     return {
-      outcome: log.outcome,
-      finishedAt: log.finishedAt || "",
-      planSummary: log.plan?.cycleSummary || "",
-      failureSummary: truncate(log.failureSummary || "", 6_000),
+      ...compact,
       push: compactCommandResult(log.push),
       ciCheck: compactCommandResult(log.ciCheck),
       deploy: compactCommandResult(log.deploy)
@@ -94,6 +225,7 @@ export async function getWorkspaceContext(config, options = {}) {
     operatorInstruction: config.operatorInstruction || "",
     runState: options.runState || null,
     latestCycleFailure: readLatestCycleFailure(config),
+    failureLoop: readFailureLoop(config),
     sessionInstructions: readInstructions(config),
     latestSessionInstruction: readLatestInstruction(config),
     detectedCommands: config.commandDiscovery.enabled
