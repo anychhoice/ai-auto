@@ -156,11 +156,11 @@ function helpText() {
   return [
     "사용 가능 명령:",
     "/whatnow 또는 /ai-auto whatnow - 현재 실행 요약",
-    "/status 또는 /now - 진행 중인 cycle 상태와 최근 작업 요약",
+    "/ai-auto status 또는 /now - 진행 중인 cycle 상태와 최근 작업 요약",
     "/instruct 자연어 지시 - 실행 중인 세션에 지시 추가",
     "/show - 활성 지시 확인",
     "/clear - 활성 지시 정리",
-    "/help - 명령 목록 표시"
+    "/ai-auto help - 명령 목록 표시"
   ].join("\n");
 }
 

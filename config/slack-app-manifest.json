@@ -9,20 +9,20 @@
     },
     "slash_commands": [
       {
+        "command": "/ai-auto",
+        "description": "AI Auto command router",
+        "usage_hint": "whatnow | status | now | instruct <지시> | show | clear | help",
+        "should_escape": false
+      },
+      {
         "command": "/aiauto",
         "description": "AI Auto command router",
-        "usage_hint": "whatnow | status | instruct <지시> | show | clear | help",
+        "usage_hint": "whatnow | status | now | instruct <지시> | show | clear | help",
         "should_escape": false
       },
       {
         "command": "/whatnow",
         "description": "AI Auto 실행 누적 요약을 확인합니다.",
-        "usage_hint": "",
-        "should_escape": false
-      },
-      {
-        "command": "/status",
-        "description": "AI Auto 현재 상태와 최근 작업을 요약합니다.",
         "usage_hint": "",
         "should_escape": false
       },
@@ -47,12 +47,6 @@
       {
         "command": "/clear",
         "description": "AI Auto 활성 지시를 정리합니다.",
-        "usage_hint": "",
-        "should_escape": false
-      },
-      {
-        "command": "/help",
-        "description": "AI Auto 명령어 목록을 표시합니다.",
         "usage_hint": "",
         "should_escape": false
       }
