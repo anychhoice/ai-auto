@@ -31,11 +31,27 @@ function cycleLogFiles(logDir) {
   if (!fs.existsSync(logDir)) {
     return [];
   }
-  return fs
+  const activeFiles = fs
     .readdirSync(logDir)
     .filter((file) => file.endsWith("-cycle.json"))
-    .map((file) => path.join(logDir, file))
-    .sort();
+    .map((file) => path.join(logDir, file));
+  const archiveDir = path.join(logDir, "archive");
+  const archivedFiles = fs.existsSync(archiveDir)
+    ? fs
+        .readdirSync(archiveDir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .flatMap((entry) => {
+          const dir = path.join(archiveDir, entry.name);
+          return fs
+            .readdirSync(dir)
+            .filter((file) => file.endsWith("-cycle.json"))
+            .map((file) => path.join(dir, file));
+        })
+    : [];
+
+  return [...activeFiles, ...archivedFiles].sort((a, b) =>
+    path.basename(a).localeCompare(path.basename(b))
+  );
 }
 
 function isFailureOutcome(outcome) {

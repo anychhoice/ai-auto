@@ -251,6 +251,14 @@ function plannerMode(config) {
   return config.planner?.mode || "codex";
 }
 
+function hasActiveOperatorDirection(context) {
+  return Boolean(
+    String(context.latestSessionInstruction || "").trim() ||
+      String(context.operatorInstruction || "").trim() ||
+      context.runState?.newConfigInstruction
+  );
+}
+
 function isSuccessfulCycleOutcome(outcome) {
   return outcome === "verified" || outcome === "no_change_requested";
 }
@@ -331,7 +339,11 @@ export async function runCycle(config, logger = console, options = {}) {
     signal: forceSignal,
     runState: options.runState || null
   });
-  if (context.failureLoop?.detected && (config.failureLoop?.action || "stop") === "stop") {
+  if (
+    context.failureLoop?.detected &&
+    (config.failureLoop?.action || "stop") === "stop" &&
+    !hasActiveOperatorDirection(context)
+  ) {
     logger.warn?.(
       `[ai-auto] repeated failure loop detected (${context.failureLoop.repeatedCount}/${context.failureLoop.threshold}); stopping before repeating the same work`
     );
