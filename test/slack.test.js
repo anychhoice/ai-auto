@@ -85,6 +85,14 @@ test("parseSlackSlashCommand supports one /ai-auto command and direct command na
     command: "whatnow",
     args: ""
   });
+  assert.deepEqual(parseSlackSlashCommand({ command: "/aiauto", text: "status" }), {
+    command: "status",
+    args: ""
+  });
+  assert.deepEqual(parseSlackSlashCommand({ command: "/whatnow", text: "" }), {
+    command: "whatnow",
+    args: ""
+  });
   assert.deepEqual(parseSlackSlashCommand({ command: "/ai-auto", text: "instruct fix v2" }), {
     command: "instruct",
     args: "fix v2"

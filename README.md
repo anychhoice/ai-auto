@@ -297,10 +297,12 @@ SLACK_BOT_TOKEN=xoxb-your-bot-token
 SLACK_APP_TOKEN=xapp-your-app-level-token
 ```
 
-- `SLACK_BOT_TOKEN`: Bot User OAuth Token입니다. 최소 `chat:write` 권한이 필요합니다. 앱 멘션을 받으려면 `app_mentions:read`, DM 메시지를 받으려면 `im:history`도 추가합니다.
+- `SLACK_BOT_TOKEN`: Bot User OAuth Token입니다. 최소 `chat:write` 권한이 필요합니다. Slash command를 쓰려면 `commands`, 앱 멘션을 받으려면 `app_mentions:read`, DM 메시지를 받으려면 `im:history`도 추가합니다.
 - `SLACK_APP_TOKEN`: Socket Mode용 app-level token입니다. `connections:write` scope가 필요합니다.
 
 Slack 앱 설정에서는 Socket Mode를 켜고, Event Subscriptions에 `app_mention` 또는 `message.im`을 추가한 뒤 앱을 보고받을 채널에 초대합니다. 명령은 Socket Mode 이벤트로 받으므로 공개 URL이나 별도 서버는 필요 없습니다.
+
+Slack 앱 manifest로 한 번에 설정하려면 [config/slack-app-manifest.json](./config/slack-app-manifest.json)을 Slack 앱의 **App Manifest** 화면에 붙여넣습니다. 기존 앱을 수정한 뒤에는 **OAuth & Permissions**에서 앱을 workspace에 다시 설치해야 새 slash command와 `commands` scope가 반영됩니다.
 
 `config/ai-auto.json`에서 Slack을 켭니다.
 
@@ -345,12 +347,21 @@ Slack에서 사용할 수 있는 명령은 다음과 같습니다.
 @ai-auto instruct MusicXML 변환 오류를 먼저 고치고, 테스트로 재현해.
 ```
 
-Slash command를 쓰고 싶다면 Slack 앱에 `/ai-auto`를 등록한 뒤 `whatnow`, `status`, `instruct ...`를 인자로 보내면 됩니다.
+Slash command를 쓰면 앱을 태그하지 않아도 됩니다. `config/slack-app-manifest.json`은 다음 명령을 등록합니다.
 
 ```text
 /ai-auto whatnow
 /ai-auto instruct v2 benchmark부터 확인해.
+/whatnow
+/status
+/now
+/instruct v2 benchmark부터 확인해.
+/show
+/clear
+/help
 ```
+
+`/ai-auto`와 `/aiauto`는 라우터 명령이라 뒤에 `whatnow`, `status`, `instruct ...` 같은 하위 명령을 붙여 씁니다. `/whatnow`, `/status`, `/now`, `/instruct`, `/show`, `/clear`, `/help`는 바로 실행됩니다.
 
 `commands.allowedUserIds`가 비어 있으면 `slack.channelId` 채널 안의 모든 Slack 사용자의 명령을 허용합니다. 특정 사용자만 허용하려면 Slack user id를 배열에 넣습니다. 채널은 별도 허용 목록을 두지 않고 `slack.channelId` 하나로 보고와 명령을 함께 제한합니다.
 
